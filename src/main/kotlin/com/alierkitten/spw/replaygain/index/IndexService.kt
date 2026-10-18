@@ -22,7 +22,7 @@ class IndexService(
     private val engine: ReplayGainEngine,
     private val tagWriter: TagWriter,
     private val config: PluginConfig,
-    private val ffmpegAvailable: Boolean
+    private val ffmpegLocator: () -> String?
 ) {
     private val executor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "spw-replaygain-indexer").apply { isDaemon = true }
@@ -142,8 +142,11 @@ class IndexService(
     }
 
     private fun ensureReady(): Boolean {
-        if (!ffmpegAvailable) {
-            toast("未检测到 FFmpeg，无法测量响度", WorkshopApi.Ui.ToastType.Error)
+        if (ffmpegLocator() == null) {
+            toast(
+                "未检测到 FFmpeg，无法测量响度；请在插件设置中填写 FFmpeg 路径",
+                WorkshopApi.Ui.ToastType.Error
+            )
             return false
         }
         if (!WorkshopApi.manager.isPermissionGranted(PluginPermission.LIBRARY_READ)) {

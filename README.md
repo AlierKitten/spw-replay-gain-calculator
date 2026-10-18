@@ -16,20 +16,20 @@
   - FLAC / OGG：Vorbis Comment
   - 写入字段：`REPLAYGAIN_TRACK_GAIN`、`REPLAYGAIN_TRACK_PEAK`、`REPLAYGAIN_ALBUM_GAIN`、`REPLAYGAIN_REFERENCE_LOUDNESS`
 - **自动索引**：插件启用（`start()`）时对全库尚未索引的歌曲自动补扫。
-- **手动索引**：
-  - 配置页按钮「索引全部歌曲」「索引当前播放歌曲」
-  - 快捷键 `Ctrl+Alt+R` 索引当前播放歌曲
+- **手动索引**：配置页按钮「索引全部歌曲」「索引当前播放歌曲」。
 - **SQLite 持久化**：记录每首已索引歌曲的 ID、路径、专辑、响度、增益、峰值与参考响度。
-- **可配置参考响度**：默认 `-18.0 LUFS`。
+- **可配置参考响度**：默认 `-18.0 LUFS`，文本输入，范围 `-30.0 ~ 0.0`，超过 1 位的小数在保存时自动舍弃。
+- **可手动指定 FFmpeg 路径**：无需把 FFmpeg 加入 `PATH`，在设置中填写即生效（无需重启插件）。
 - **容错降级**：未安装 FFmpeg 或未授予曲库读取权限时给出提示并跳过，不影响播放器运行。
 
 ## 环境要求
 
 1. **Salt Player**（支持 Workshop / Mod 的版本）。
-2. **JDK 25**：工程通过 `jvmToolchain(25)` 编译。运行 Gradle 本身可使用 JDK 17+，[foojay-resolver](https://github.com/gradle/foojay-toolchains) 会自动下载 JDK 25 工具链。
+2. **JDK 25**：工程通过 `jvmToolchain(25)` 编译。
 3. **FFmpeg**：必须安装并满足以下任一条件：
-   - `ffmpeg` 在系统 `PATH` 中；
-   - 设置环境变量 `FFMPEG_PATH` 指向 FFmpeg 可执行文件。
+   - 在插件设置中填写「FFmpeg 路径」（可填可执行文件或所在目录的绝对路径）；
+   - 设置环境变量 `FFMPEG_PATH` 指向 FFmpeg 可执行文件；
+   - `ffmpeg` 在系统 `PATH` 中。
 4. 首次构建需要联网（从 JitPack 拉取 SPW Workshop API 与 Gradle 插件）。
 
 ## 构建
@@ -62,11 +62,12 @@ build/libs/plugin-com.alierkitten.spw.replaygain-1.0.0.spmod
 workshop/data/com.alierkitten.spw.replaygain/config.json
 ```
 
-| 配置项 | 键 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| 参考响度 (LUFS) | `replaygain.referenceLoudness` | seekbar | `-18.0` | 目标响度，范围 `-30.0` ~ `0.0` |
-| 启动时自动补扫未索引歌曲 | `replaygain.autoIndexOnStart` | switch | `true` | 插件启用后自动处理未索引曲目 |
-| 将结果写入文件标签 | `replaygain.writeTags` | switch | `true` | 关闭后仅测量并记录到数据库 |
+| 配置项 | 键 | 类型 | 默认值  | 说明 |
+| --- | --- | --- |---------| --- |
+| 参考响度 (LUFS) | `replaygain.referenceLoudness` | edittext | `-18.0` | 目标响度，范围 `-30.0` ~ `0.0`，保留 1 位小数 |
+| FFmpeg 路径 | `replaygain.ffmpegPath` | edittext | 空      | 可执行文件或所在目录路径；留空则回退到 `FFMPEG_PATH` / `PATH` |
+| 启动时自动补扫未索引歌曲 | `replaygain.autoIndexOnStart` | switch | `false` | 插件启用后自动处理未索引曲目 |
+| 将结果写入文件标签 | `replaygain.writeTags` | switch | `true`  | 关闭后仅测量并记录到数据库 |
 
 增益计算公式：
 
@@ -81,7 +82,6 @@ start()
   ├─ 读取配置（参考响度 / 自动补扫 / 写标签）
   ├─ 探测 FFmpeg
   ├─ 初始化 SQLite（replaygain.db）
-  ├─ 注册快捷键（Ctrl+Alt+R）
   └─ 若开启自动补扫 → indexAll()
 
 indexAll() / indexCurrent()
@@ -111,7 +111,7 @@ spw-replay-gain-calculator/
 ├── gradlew / gradlew.bat
 └── src/main/
     ├── kotlin/com/alierkitten/spw/replaygain/
-    │   ├── MainPlugin.kt            # 插件入口、生命周期、自动补扫、快捷键
+    │   ├── MainPlugin.kt            # 插件入口、生命周期、自动补扫
     │   ├── config/PluginConfig.kt   # 配置读取与数据目录
     │   ├── util/FfmpegChecker.kt    # FFmpeg 探测
     │   ├── replaygain/
@@ -157,9 +157,8 @@ CREATE TABLE indexed_tracks (
 | 权限 | 用途 |
 | --- | --- |
 | `library-read` | 读取曲库歌曲元数据与文件路径 |
-| `key-bindings` | 注册 `Ctrl+Alt+R` 快捷键 |
 
-未授予 `library-read` 时，索引任务会提示并跳过；未授予 `key-bindings` 时，快捷键不可用，但配置页按钮仍可手动触发。
+未授予 `library-read` 时，索引任务会提示并跳过。
 
 ## 已知限制
 

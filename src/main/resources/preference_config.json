@@ -6,18 +6,24 @@
       "preferences": [
         {
           "key": "replaygain.referenceLoudness",
-          "type": "seekbar",
+          "type": "edittext",
           "title": "参考响度 (LUFS)",
-          "default_value": -18.0,
-          "min": -30.0,
-          "max": 0.0
+          "summary": "范围 -30.0 ~ 0.0，保留 1 位小数",
+          "default_value": "-18.0"
+        },
+        {
+          "key": "replaygain.ffmpegPath",
+          "type": "edittext",
+          "title": "FFmpeg 路径",
+          "summary": "填写 ffmpeg 可执行文件或其所在目录的绝对路径；留空则自动使用 PATH 或环境变量 FFMPEG_PATH",
+          "default_value": ""
         },
         {
           "key": "replaygain.autoIndexOnStart",
           "type": "switch",
           "title": "启动时自动补扫未索引歌曲",
           "summary": "插件启用后自动测量并写入尚未索引的曲目",
-          "default_value": true
+          "default_value": false
         },
         {
           "key": "replaygain.writeTags",

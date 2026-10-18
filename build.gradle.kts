@@ -42,6 +42,7 @@ spmod {
     PluginDescription = "Measures EBU R128 loudness with FFmpeg and writes ReplayGain tags to MP3/FLAC/OGG metadata."
     PluginVersion = "1.0.0"
     PluginProvider = "alierkitten"
+    PluginOpenSourceUrl = "https://github.com/AlierKitten/spw-replay-gain-calculator"
     PluginHasConfig = true
-    PluginPermissions = listOf(PluginPermission.LIBRARY_READ, PluginPermission.KEY_BINDINGS)
+    PluginPermissions = listOf(PluginPermission.LIBRARY_READ)
 }

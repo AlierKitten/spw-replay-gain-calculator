@@ -9,10 +9,10 @@ import java.util.concurrent.TimeUnit
  * `ebur128` filter. No audio decoding is performed in-process.
  */
 class ReplayGainEngine(
-    private val ffmpegExecutable: String?
+    private val resolveExecutable: () -> String?
 ) {
     fun measure(path: String, referenceLoudness: Double): ReplayGainResult {
-        val executable = ffmpegExecutable
+        val executable = resolveExecutable()
             ?: throw IllegalStateException("FFmpeg is not available")
         val file = File(path)
         require(file.isFile) { "File not found: $path" }

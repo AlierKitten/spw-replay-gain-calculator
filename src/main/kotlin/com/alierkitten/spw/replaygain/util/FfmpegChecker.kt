@@ -1,21 +1,44 @@
 package com.alierkitten.spw.replaygain.util
 
+import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 object FfmpegChecker {
 
-    @Volatile
-    private var resolved: String? = null
+    /** Successfully validated candidates, so repeated lookups do not spawn processes. */
+    private val validated = ConcurrentHashMap<String, String>()
 
     /**
      * Locates a usable FFmpeg executable.
      *
-     * Uses `FFMPEG_PATH` when set, otherwise relies on `ffmpeg` being available on `PATH`.
-     * Returns `null` when FFmpeg is not installed.
+     * Resolution order: user-configured path, then `FFMPEG_PATH`, then `ffmpeg` on `PATH`.
+     * The configured value may be the executable itself or the directory containing it.
+     * Returns `null` when no candidate is usable.
      */
-    fun locate(): String? {
-        resolved?.let { return it }
-        val candidate = System.getenv("FFMPEG_PATH")?.takeIf { it.isNotBlank() } ?: "ffmpeg"
+    fun locate(configuredPath: String? = null): String? {
+        return candidates(configuredPath).firstOrNull { isAvailable(it) }
+    }
+
+    private fun candidates(configuredPath: String?): List<String> {
+        val result = LinkedHashSet<String>()
+        configuredPath?.let(::normalize)?.let(result::add)
+        System.getenv("FFMPEG_PATH")?.let(::normalize)?.let(result::add)
+        result += "ffmpeg"
+        return result.toList()
+    }
+
+    private fun normalize(raw: String): String? {
+        val trimmed = raw.trim().trim('"', '\'')
+        if (trimmed.isEmpty()) return null
+        val asFile = File(trimmed)
+        if (!asFile.isDirectory) return trimmed
+        val executableName = if (isWindows()) "ffmpeg.exe" else "ffmpeg"
+        return asFile.resolve(executableName).absolutePath
+    }
+
+    private fun isAvailable(candidate: String): Boolean {
+        validated[candidate]?.let { return true }
         val available = runCatching {
             val process = ProcessBuilder(candidate, "-version")
                 .redirectErrorStream(true)
@@ -28,11 +51,10 @@ object FfmpegChecker {
                 process.exitValue() == 0
             }
         }.getOrDefault(false)
-
-        return if (available) {
-            candidate.also { resolved = it }
-        } else {
-            null
-        }
+        if (available) validated[candidate] = candidate
+        return available
     }
+
+    private fun isWindows(): Boolean =
+        System.getProperty("os.name").orEmpty().lowercase().contains("win")
 }
