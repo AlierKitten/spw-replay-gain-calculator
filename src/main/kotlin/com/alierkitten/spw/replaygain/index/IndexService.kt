@@ -15,7 +15,7 @@ import java.util.concurrent.Executors
 
 /**
  * Orchestrates the index pipeline: read tracks -> filter unindexed -> measure ->
- * write tags -> persist -> finalize album gain.
+ * write tags -> persist.
  */
 class IndexService(
     private val store: IndexStore,
@@ -75,7 +75,6 @@ class IndexService(
         var processed = 0
         var skipped = 0
         var failed = 0
-        val touchedAlbums = linkedSetOf<String>()
 
         tracks.forEachIndexed { index, item ->
             val key = trackKey(item)
@@ -84,10 +83,7 @@ class IndexService(
                 return@forEachIndexed
             }
             when (processTrack(item, reference, writeTags)) {
-                Outcome.DONE -> {
-                    processed++
-                    if (item.album.isNotBlank()) touchedAlbums += item.album
-                }
+                Outcome.DONE -> processed++
                 Outcome.SKIPPED -> skipped++
                 Outcome.FAILED -> failed++
             }
@@ -96,7 +92,6 @@ class IndexService(
             }
         }
 
-        finalizeAlbums(touchedAlbums, reference, writeTags)
         toast(
             "ReplayGain 完成：处理 $processed，跳过 $skipped，失败 $failed",
             WorkshopApi.Ui.ToastType.Success
@@ -131,14 +126,46 @@ class IndexService(
         }
 
         when (processTrack(item, reference, writeTags)) {
-            Outcome.DONE -> {
-                if (item.album.isNotBlank()) {
-                    finalizeAlbums(setOf(item.album), reference, writeTags)
-                }
-                toast("已索引《${item.title}》", WorkshopApi.Ui.ToastType.Success)
-            }
+            Outcome.DONE -> toast("已索引《${item.title}》", WorkshopApi.Ui.ToastType.Success)
             else -> toast("索引《${item.title}》失败", WorkshopApi.Ui.ToastType.Error)
         }
+    }
+
+    fun cleanupReplayGainTags() {
+        submit { runCleanupReplayGainTags() }
+    }
+
+    private fun runCleanupReplayGainTags() {
+        if (!ensureCleanupReady()) return
+
+        val tracks = fetchAllTracks()
+        if (tracks.isEmpty()) {
+            toast("曲库为空，无需清理", WorkshopApi.Ui.ToastType.Warning)
+            return
+        }
+
+        var cleaned = 0
+        var skipped = 0
+        tracks.forEachIndexed { index, item ->
+            val path = item.path
+            if (path.isBlank() || !File(path).isFile || !tagWriter.supports(path)) {
+                skipped++
+                return@forEachIndexed
+            }
+            if (tagWriter.removeReplayGainTags(path)) {
+                cleaned++
+            } else {
+                skipped++
+            }
+            if ((index + 1) % PROGRESS_INTERVAL == 0) {
+                toast("增益标签清理进度 ${index + 1}/${tracks.size}", WorkshopApi.Ui.ToastType.Success)
+            }
+        }
+
+        toast(
+            "增益标签清理完成：清理 $cleaned，跳过 $skipped",
+            WorkshopApi.Ui.ToastType.Success
+        )
     }
 
     private fun ensureReady(): Boolean {
@@ -149,6 +176,14 @@ class IndexService(
             )
             return false
         }
+        if (!WorkshopApi.manager.isPermissionGranted(PluginPermission.LIBRARY_READ)) {
+            toast("缺少曲库读取权限（LIBRARY_READ）", WorkshopApi.Ui.ToastType.Error)
+            return false
+        }
+        return true
+    }
+
+    private fun ensureCleanupReady(): Boolean {
         if (!WorkshopApi.manager.isPermissionGranted(PluginPermission.LIBRARY_READ)) {
             toast("缺少曲库读取权限（LIBRARY_READ）", WorkshopApi.Ui.ToastType.Error)
             return false
@@ -195,7 +230,6 @@ class IndexService(
                 ReplayGainTags(
                     trackGainDb = result.trackGainDb,
                     trackPeakLinear = result.trackPeakLinear,
-                    albumGainDb = null,
                     referenceLoudness = result.referenceLoudness
                 )
             )
@@ -207,26 +241,6 @@ class IndexService(
 
         store.markIndexed(trackKey(item), item.id, path, item.album, result)
         return Outcome.DONE
-    }
-
-    private fun finalizeAlbums(albums: Set<String>, reference: Double, writeTags: Boolean) {
-        albums.asSequence()
-            .filter { it.isNotBlank() }
-            .forEach { album ->
-                val rows = store.getAlbumTracks(album)
-                if (rows.isEmpty()) return@forEach
-
-                // Approximate album loudness as the energy average of its tracks.
-                val meanEnergy = rows.map { Math.pow(10.0, it.integratedLoudness / 10.0) }.average()
-                if (meanEnergy.isNaN() || meanEnergy <= 0.0) return@forEach
-                val albumLoudness = 10.0 * Math.log10(meanEnergy)
-                val albumGain = ReplayGainEngine.round2(reference - albumLoudness)
-
-                store.updateAlbumGain(album, albumGain)
-                if (writeTags) {
-                    rows.forEach { tagWriter.writeAlbumGain(it.path, albumGain) }
-                }
-            }
     }
 
     private fun trackKey(item: MediaItem): String = item.id.ifBlank { item.path }

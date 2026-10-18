@@ -18,12 +18,17 @@ class ReplayGainEngine(
         require(file.isFile) { "File not found: $path" }
 
         val output = runEbur128(executable, file)
-        val integrated = INTEGRATED_REGEX.find(output)
+        // ebur128 prints an instantaneous `I:`/`Peak:` line per interval while it processes;
+        // the first one is the algorithm's initial floor (≈ -70 LUFS) and is useless. The
+        // last match is the converged value that matches the final summary, so use that.
+        val integrated = INTEGRATED_REGEX.findAll(output)
+            .lastOrNull()
             ?.groupValues
             ?.getOrNull(1)
             ?.toDoubleOrNull()
             ?: throw IllegalStateException("Unable to parse integrated loudness for ${file.name}")
-        val truePeakDb = TRUE_PEAK_REGEX.find(output)
+        val truePeakDb = TRUE_PEAK_REGEX.findAll(output)
+            .lastOrNull()
             ?.groupValues
             ?.getOrNull(1)
             ?.toDoubleOrNull()

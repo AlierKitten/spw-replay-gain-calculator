@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "com.alierkitten.spw.replaygain"
-version = "1.0.0"
+version = "1.0.3"
 
 java {
     sourceCompatibility = JavaVersion.VERSION_25

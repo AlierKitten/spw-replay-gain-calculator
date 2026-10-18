@@ -22,7 +22,6 @@ import java.util.Locale
 data class ReplayGainTags(
     val trackGainDb: Double,
     val trackPeakLinear: Double,
-    val albumGainDb: Double?,
     val referenceLoudness: Double
 )
 
@@ -51,23 +50,72 @@ class TagWriter {
                 REPLAYGAIN_TRACK_PEAK to formatPeak(tags.trackPeakLinear),
                 REPLAYGAIN_REFERENCE_LOUDNESS to formatReference(tags.referenceLoudness)
             )
-            tags.albumGainDb?.let { values[REPLAYGAIN_ALBUM_GAIN] = formatGain(it) }
             writeValues(tag, values)
             audioFile.commit()
             true
         }.getOrElse { false }
     }
 
-    fun writeAlbumGain(path: String, albumGainDb: Double): Boolean {
+    /**
+     * Removes all ReplayGain tags written by this plugin from a file, if present: track gain,
+     * track peak and reference loudness. Returns `true` when at least one tag was found and
+     * deleted, `false` when there was nothing to remove or the file is unsupported/unreadable.
+     */
+    fun removeReplayGainTags(path: String): Boolean {
         val file = File(path)
         if (!file.isFile) return false
         return runCatching {
             val audioFile = AudioFileIO.read(file)
-            val tag = prepareTag(audioFile)
-            writeValues(tag, mapOf(REPLAYGAIN_ALBUM_GAIN to formatGain(albumGainDb)))
-            audioFile.commit()
-            true
+            val tag = audioFile.tag ?: return@runCatching false
+            val removed = when (tag) {
+                is AbstractID3v2Tag -> removeId3ReplayGain(tag)
+                is VorbisCommentTag -> removeVorbisReplayGain(tag)
+                is FlacTag -> removeVorbisReplayGain(tag)
+                else -> false
+            }
+            if (removed) audioFile.commit()
+            removed
         }.getOrElse { false }
+    }
+
+    private fun removeId3ReplayGain(tag: AbstractID3v2Tag): Boolean {
+        val frameId = ID3v24Frames.FRAME_ID_USER_DEFINED_INFO
+        val retained = mutableListOf<TagField>()
+        val existing = tag.getFrameOfType(frameId)
+        var removed = false
+        while (existing.hasNext()) {
+            val frame = existing.next() as? AbstractID3v2Frame ?: continue
+            val description = (frame.body as? FrameBodyTXXX)?.description
+            if (description != null && description.uppercase(Locale.US).startsWith(REPLAYGAIN_PREFIX)) {
+                removed = true
+                continue
+            }
+            retained += frame
+        }
+        if (removed) tag.setFrame(frameId, retained)
+        return removed
+    }
+
+    private fun removeVorbisReplayGain(tag: VorbisCommentTag): Boolean {
+        var removed = false
+        for (id in ALL_REPLAYGAIN_FIELDS) {
+            if (tag.getFields(id).isNotEmpty()) {
+                tag.deleteField(id)
+                removed = true
+            }
+        }
+        return removed
+    }
+
+    private fun removeVorbisReplayGain(tag: FlacTag): Boolean {
+        var removed = false
+        for (id in ALL_REPLAYGAIN_FIELDS) {
+            if (tag.getFields(id).isNotEmpty()) {
+                tag.deleteField(id)
+                removed = true
+            }
+        }
+        return removed
     }
 
     /**
@@ -132,9 +180,14 @@ class TagWriter {
     companion object {
         private const val REPLAYGAIN_TRACK_GAIN = "REPLAYGAIN_TRACK_GAIN"
         private const val REPLAYGAIN_TRACK_PEAK = "REPLAYGAIN_TRACK_PEAK"
-        private const val REPLAYGAIN_ALBUM_GAIN = "REPLAYGAIN_ALBUM_GAIN"
         private const val REPLAYGAIN_REFERENCE_LOUDNESS = "REPLAYGAIN_REFERENCE_LOUDNESS"
         private const val REPLAYGAIN_PREFIX = "REPLAYGAIN_"
+
+        private val ALL_REPLAYGAIN_FIELDS = listOf(
+            REPLAYGAIN_TRACK_GAIN,
+            REPLAYGAIN_TRACK_PEAK,
+            REPLAYGAIN_REFERENCE_LOUDNESS
+        )
 
         val SUPPORTED_EXTENSIONS = setOf("mp3", "flac", "ogg")
     }

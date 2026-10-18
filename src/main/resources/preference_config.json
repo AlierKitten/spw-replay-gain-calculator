@@ -51,6 +51,13 @@
           "summary": "仅处理当前正在播放的歌曲",
           "arrow_type": "none",
           "on_click": "com.alierkitten.spw.replaygain.MainPlugin.onIndexCurrentButtonClick"
+        },
+        {
+          "type": "button",
+          "title": "清理歌曲增益标签",
+          "summary": "移除所有歌曲文件中的 ReplayGain 增益标签（REPLAYGAIN_TRACK_GAIN / TRACK_PEAK / REFERENCE_LOUDNESS），无需 FFmpeg",
+          "arrow_type": "none",
+          "on_click": "com.alierkitten.spw.replaygain.MainPlugin.onCleanupReplayGainTagsButtonClick"
         }
       ]
     }

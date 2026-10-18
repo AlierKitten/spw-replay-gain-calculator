@@ -92,5 +92,16 @@ class MainPlugin(
             }
             service.indexCurrent()
         }
+
+        @JvmStatic
+        @JvmName("onCleanupReplayGainTagsButtonClick")
+        fun onCleanupReplayGainTagsButtonClick() {
+            val service = instance?.indexService
+            if (service == null) {
+                WorkshopApi.ui.toast("插件尚未启动", WorkshopApi.Ui.ToastType.Warning)
+                return
+            }
+            service.cleanupReplayGainTags()
+        }
     }
 }

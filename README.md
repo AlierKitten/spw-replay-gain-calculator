@@ -14,7 +14,7 @@
 - **写回文件元数据**：
   - MP3：ID3v2 `TXXX:REPLAYGAIN_*` 帧
   - FLAC / OGG：Vorbis Comment
-  - 写入字段：`REPLAYGAIN_TRACK_GAIN`、`REPLAYGAIN_TRACK_PEAK`、`REPLAYGAIN_ALBUM_GAIN`、`REPLAYGAIN_REFERENCE_LOUDNESS`
+  - 写入字段：`REPLAYGAIN_TRACK_GAIN`、`REPLAYGAIN_TRACK_PEAK`、`REPLAYGAIN_REFERENCE_LOUDNESS`
 - **自动索引**：插件启用（`start()`）时对全库尚未索引的歌曲自动补扫。
 - **手动索引**：配置页按钮「索引全部歌曲」「索引当前播放歌曲」。
 - **SQLite 持久化**：记录每首已索引歌曲的 ID、路径、专辑、响度、增益、峰值与参考响度。
@@ -89,8 +89,7 @@ indexAll() / indexCurrent()
   ├─ 过滤已索引歌曲（SQLite）
   ├─ ReplayGainEngine.measure() → FFmpeg ebur128
   ├─ TagWriter.write() → 写 REPLAYGAIN_* 标签
-  ├─ IndexStore.markIndexed()
-  └─ finalizeAlbums() → 按专辑估算并回写 REPLAYGAIN_ALBUM_GAIN
+  └─ IndexStore.markIndexed()
 ```
 
 说明：
@@ -98,7 +97,6 @@ indexAll() / indexCurrent()
 - 当前 SPW API 的 `LIBRARY_WRITE` 尚无写入入口，因此标签通过 **JAudiotagger 直接写入音频文件**。
 - 曲库路径来自 `MediaItem.path`（需要 `LIBRARY_READ`）。
 - 测量在单线程后台执行器中进行，避免阻塞宿主 UI；同一时间只允许一个索引任务。
-- 专辑增益按专辑内已索引曲目的集成响度做能量平均后估算（近似值）。
 
 ## 目录结构
 
@@ -120,7 +118,7 @@ spw-replay-gain-calculator/
     │   │   └── TagWriter.kt         # MP3/FLAC/OGG 标签写入
     │   └── index/
     │       ├── IndexStore.kt        # SQLite 持久化
-    │       └── IndexService.kt      # 索引流水线与专辑增益回写
+    │       └── IndexService.kt      # 索引流水线
     └── resources/
         └── preference_config.json   # 配置界面
 ```
@@ -145,7 +143,6 @@ CREATE TABLE indexed_tracks (
     true_peak_db REAL,
     track_gain REAL,
     track_peak REAL,
-    album_gain REAL,
     reference REAL,
     status TEXT,
     indexed_at INTEGER
@@ -165,7 +162,6 @@ CREATE TABLE indexed_tracks (
 - SPW API 目前没有媒体库导入/扫描扩展点，因此「导入文件时自动索引」以 **启动时自动补扫 + 手动触发** 实现。新导入的歌曲会在下次启用插件或手动点击按钮时被处理。
 - 必须安装 FFmpeg；未安装时无法测量响度。
 - 支持 **MP3 / FLAC / OGG**；暂不支持 M4A / MP4。
-- 专辑增益为近似值（基于已索引曲目的能量平均）。
 - ID3v2.2 标签会自动提升为 ID3v2.4 后再写入。
 
 ## 依赖

@@ -6,13 +6,7 @@ import java.sql.Connection
 import java.sql.Driver
 import java.sql.DriverManager
 import java.sql.SQLException
-import java.sql.Types
 import java.util.Properties
-
-data class AlbumTrack(
-    val path: String,
-    val integratedLoudness: Double
-)
 
 /**
  * SQLite-backed persistence of indexed tracks.
@@ -38,7 +32,6 @@ class IndexStore(private val dbPath: Path) {
                     true_peak_db REAL,
                     track_gain REAL,
                     track_peak REAL,
-                    album_gain REAL,
                     reference REAL,
                     status TEXT,
                     indexed_at INTEGER
@@ -104,8 +97,8 @@ class IndexStore(private val dbPath: Path) {
             """
             INSERT OR REPLACE INTO indexed_tracks
                 (track_key, track_id, path, album, integrated_loudness, true_peak_db,
-                 track_gain, track_peak, album_gain, reference, status, indexed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 track_gain, track_peak, reference, status, indexed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """.trimIndent()
         ).use { statement ->
             statement.setString(1, trackKey)
@@ -116,44 +109,10 @@ class IndexStore(private val dbPath: Path) {
             statement.setDouble(6, result.truePeakDb)
             statement.setDouble(7, result.trackGainDb)
             statement.setDouble(8, result.trackPeakLinear)
-            statement.setNull(9, Types.REAL)
-            statement.setDouble(10, result.referenceLoudness)
-            statement.setString(11, "done")
-            statement.setLong(12, System.currentTimeMillis())
+            statement.setDouble(9, result.referenceLoudness)
+            statement.setString(10, "done")
+            statement.setLong(11, System.currentTimeMillis())
             statement.executeUpdate()
-        }
-    }
-
-    @Synchronized
-    fun getAlbumTracks(album: String): List<AlbumTrack> {
-        val conn = connection ?: return emptyList()
-        conn.prepareStatement(
-            "SELECT path, integrated_loudness FROM indexed_tracks " +
-                "WHERE album = ? AND status = 'done' AND integrated_loudness IS NOT NULL"
-        ).use { statement ->
-            statement.setString(1, album)
-            statement.executeQuery().use { result ->
-                val tracks = mutableListOf<AlbumTrack>()
-                while (result.next()) {
-                    tracks += AlbumTrack(
-                        path = result.getString("path"),
-                        integratedLoudness = result.getDouble("integrated_loudness")
-                    )
-                }
-                return tracks
-            }
-        }
-    }
-
-    @Synchronized
-    fun updateAlbumGain(album: String, albumGain: Double): Int {
-        val conn = connection ?: return 0
-        conn.prepareStatement(
-            "UPDATE indexed_tracks SET album_gain = ? WHERE album = ?"
-        ).use { statement ->
-            statement.setDouble(1, albumGain)
-            statement.setString(2, album)
-            return statement.executeUpdate()
         }
     }
 
