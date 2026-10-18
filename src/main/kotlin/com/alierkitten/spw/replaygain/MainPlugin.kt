@@ -83,6 +83,17 @@ class MainPlugin(
         }
 
         @JvmStatic
+        @JvmName("onReindexAllButtonClick")
+        fun onReindexAllButtonClick() {
+            val service = instance?.indexService
+            if (service == null) {
+                WorkshopApi.ui.toast("插件尚未启动", WorkshopApi.Ui.ToastType.Warning)
+                return
+            }
+            service.reindexAll()
+        }
+
+        @JvmStatic
         @JvmName("onIndexCurrentButtonClick")
         fun onIndexCurrentButtonClick() {
             val service = instance?.indexService

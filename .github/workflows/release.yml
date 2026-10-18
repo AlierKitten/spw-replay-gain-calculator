@@ -104,7 +104,7 @@ jobs:
         with:
           tag_name: ${{ steps.tag.outputs.raw }}
           name: Release ${{ steps.tag.outputs.version }}
-          draft: true
+          draft: false
           prerelease: false
           files: ${{ steps.artifact.outputs.file }}
           body: |

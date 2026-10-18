@@ -1,102 +1,63 @@
 # SPW ReplayGain Calculator
 
-一个 [Salt Player 创意工坊（SPW Workshop）](https://saltplayer.com/workshop/getting-started) 插件。
+一个 [Salt Player 创意工坊（SPW Workshop）](https://saltplayer.com/workshop/getting-started) 插件，用于为 Salt Player 的「**音量平衡**」功能准备数据。
 
-使用系统 **FFmpeg** 测量歌曲的 EBU R128 集成响度（LUFS）与真峰，计算 **ReplayGain 2.0** 增益并直接写入音频文件元数据；使用 **SQLite** 记录已索引歌曲，避免重复计算。参考响度可在插件配置界面自定义，默认 **-18 LUFS**。
+Salt Player 的「音量平衡」会读取音频文件中的 ReplayGain 标签来统一不同歌曲的播放音量，但**不会自动计算**这些标签。本插件调用系统 **FFmpeg** 测量歌曲响度（EBU R128），计算 **ReplayGain 2.0** 增益并写入文件标签，让「音量平衡」能够正常工作。
 
 - 插件 ID：`com.alierkitten.spw.replaygain`
-- 主类：`com.alierkitten.spw.replaygain.MainPlugin`
 - 构建产物：`build/libs/plugin-com.alierkitten.spw.replaygain-1.0.0.spmod`
 
-## 功能特性
+## 与「音量平衡」的关系
 
-- **ReplayGain 2.0 测量**：调用 FFmpeg `ebur128` 滤镜，解析集成响度（`I`）与真峰（`Peak`）。
-- **写回文件元数据**：
-  - MP3：ID3v2 `TXXX:REPLAYGAIN_*` 帧
-  - FLAC / OGG：Vorbis Comment
-  - 写入字段：`REPLAYGAIN_TRACK_GAIN`、`REPLAYGAIN_TRACK_PEAK`、`REPLAYGAIN_REFERENCE_LOUDNESS`
-- **自动索引**：插件启用（`start()`）时对全库尚未索引的歌曲自动补扫。
-- **手动索引**：配置页按钮「索引全部歌曲」「索引当前播放歌曲」。
-- **SQLite 持久化**：记录每首已索引歌曲的 ID、路径、专辑、响度、增益、峰值与参考响度。
-- **可配置参考响度**：默认 `-18.0 LUFS`，文本输入，范围 `-30.0 ~ 0.0`，超过 1 位的小数在保存时自动舍弃。
-- **可手动指定 FFmpeg 路径**：无需把 FFmpeg 加入 `PATH`，在设置中填写即生效（无需重启插件）。
-- **容错降级**：未安装 FFmpeg 或未授予曲库读取权限时给出提示并跳过，不影响播放器运行。
+1. 本插件把 `REPLAYGAIN_TRACK_GAIN`、`REPLAYGAIN_TRACK_PEAK` 等标签写入 MP3 / FLAC / OGG 文件。
+2. 在 Salt Player 中开启「音量平衡」后，播放器会读取这些标签，自动拉平各歌曲的音量差异。
+3. 插件使用 **SQLite** 记录已处理歌曲，避免重复计算。
+
+参考响度可在插件配置中自定义，默认 **-18 LUFS**。
 
 ## 环境要求
 
-1. **Salt Player**（支持 Workshop / Mod 的版本）。
-2. **JDK 25**：工程通过 `jvmToolchain(25)` 编译。
-3. **FFmpeg**：必须安装并满足以下任一条件：
-   - 在插件设置中填写「FFmpeg 路径」（可填可执行文件或所在目录的绝对路径）；
-   - 设置环境变量 `FFMPEG_PATH` 指向 FFmpeg 可执行文件；
-   - `ffmpeg` 在系统 `PATH` 中。
-4. 首次构建需要联网（从 JitPack 拉取 SPW Workshop API 与 Gradle 插件）。
+- **Salt Player**（支持 Workshop / Mod 的版本）。
+- **JDK 25**（工程通过 `jvmToolchain(25)` 编译）。
+- **FFmpeg**，满足以下任一条件即可：
+  - 在插件设置中填写「FFmpeg 路径」；
+  - 设置环境变量 `FFMPEG_PATH` 指向可执行文件；
+  - `ffmpeg` 已加入系统 `PATH`。
 
 ## 构建
 
-Windows：
-
 ```powershell
+# Windows
 .\gradlew.bat plugin
 ```
 
-Linux / macOS：
-
 ```bash
+# Linux / macOS
 ./gradlew plugin
 ```
 
-构建成功后会生成：
+构建成功后将生成的 `.spmod` 文件导入 Salt Player，启用插件并授予曲库读取权限即可。
 
-```text
-build/libs/plugin-com.alierkitten.spw.replaygain-1.0.0.spmod
-```
+## 使用
 
-将 `.spmod` 文件导入 Salt Player，启用插件并授予所需权限即可。
+- **自动索引**：开启「启动时自动补扫」后，插件启用时会自动处理尚未索引的歌曲。
+- **手动索引**：配置页提供「索引全部歌曲」「索引当前播放歌曲」按钮。
+- 未安装 FFmpeg 或未授予曲库权限时，插件会提示并跳过，不影响播放器运行。
 
 ## 配置项
 
-配置界面由 `src/main/resources/preference_config.json` 定义，用户配置保存在插件数据目录：
-
-```text
-workshop/data/com.alierkitten.spw.replaygain/config.json
-```
-
-| 配置项 | 键 | 类型 | 默认值  | 说明 |
-| --- | --- | --- |---------| --- |
-| 参考响度 (LUFS) | `replaygain.referenceLoudness` | edittext | `-18.0` | 目标响度，范围 `-30.0` ~ `0.0`，保留 1 位小数 |
-| FFmpeg 路径 | `replaygain.ffmpegPath` | edittext | 空      | 可执行文件或所在目录路径；留空则回退到 `FFMPEG_PATH` / `PATH` |
-| 启动时自动补扫未索引歌曲 | `replaygain.autoIndexOnStart` | switch | `false` | 插件启用后自动处理未索引曲目 |
-| 将结果写入文件标签 | `replaygain.writeTags` | switch | `true`  | 关闭后仅测量并记录到数据库 |
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| 参考响度 (LUFS) | 文本 | `-18.0` | 目标响度，范围 `-30.0` ~ `0.0` |
+| FFmpeg 路径 | 文本 | 空 | 留空则回退到 `FFMPEG_PATH` / `PATH` |
+| 启动时自动补扫 | 开关 | `false` | 启用后自动处理未索引曲目 |
+| 将结果写入文件标签 | 开关 | `true` | 关闭后仅测量并记录到数据库 |
 
 增益计算公式：
 
 ```text
 REPLAYGAIN_TRACK_GAIN = 参考响度 - 实测集成响度
 ```
-
-## 工作原理
-
-```text
-start()
-  ├─ 读取配置（参考响度 / 自动补扫 / 写标签）
-  ├─ 探测 FFmpeg
-  ├─ 初始化 SQLite（replaygain.db）
-  └─ 若开启自动补扫 → indexAll()
-
-indexAll() / indexCurrent()
-  ├─ WorkshopApi.library.getAllTracks()  (需要 LIBRARY_READ)
-  ├─ 过滤已索引歌曲（SQLite）
-  ├─ ReplayGainEngine.measure() → FFmpeg ebur128
-  ├─ TagWriter.write() → 写 REPLAYGAIN_* 标签
-  └─ IndexStore.markIndexed()
-```
-
-说明：
-
-- 当前 SPW API 的 `LIBRARY_WRITE` 尚无写入入口，因此标签通过 **JAudiotagger 直接写入音频文件**。
-- 曲库路径来自 `MediaItem.path`（需要 `LIBRARY_READ`）。
-- 测量在单线程后台执行器中进行，避免阻塞宿主 UI；同一时间只允许一个索引任务。
 
 ## 目录结构
 
@@ -157,19 +118,8 @@ CREATE TABLE indexed_tracks (
 
 未授予 `library-read` 时，索引任务会提示并跳过。
 
-## 已知限制
+## 限制
 
-- SPW API 目前没有媒体库导入/扫描扩展点，因此「导入文件时自动索引」以 **启动时自动补扫 + 手动触发** 实现。新导入的歌曲会在下次启用插件或手动点击按钮时被处理。
-- 必须安装 FFmpeg；未安装时无法测量响度。
-- 支持 **MP3 / FLAC / OGG**；暂不支持 M4A / MP4。
-- ID3v2.2 标签会自动提升为 ID3v2.4 后再写入。
-
-## 依赖
-
-| 依赖 | 用途 |
-| --- | --- |
-| `com.github.Moriafly:spw-workshop-api:0.1.0-dev22` | SPW Workshop API（宿主提供，`compileOnly`） |
-| `net.jthink:jaudiotagger:3.0.1` | 音频标签读写 |
-| `org.xerial:sqlite-jdbc:3.46.1.3` | SQLite 持久化 |
-
-`jaudiotagger` 与 `sqlite-jdbc` 会随 `.spmod` 一起打包到 `lib/` 目录。
+- 支持 **MP3 / FLAC / OGG**，暂不支持 M4A / MP4。
+- 必须安装 FFmpeg，否则无法测量响度。
+- 新导入的歌曲会在下次启用插件或手动点击按钮时被处理。

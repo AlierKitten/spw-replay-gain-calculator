@@ -32,7 +32,11 @@ class IndexService(
     private var busy = false
 
     fun indexAll() {
-        submit { runIndexAll() }
+        submit { runIndexAll(force = false) }
+    }
+
+    fun reindexAll() {
+        submit { runIndexAll(force = true) }
     }
 
     fun indexCurrent() {
@@ -61,7 +65,7 @@ class IndexService(
         }
     }
 
-    private fun runIndexAll() {
+    private fun runIndexAll(force: Boolean) {
         if (!ensureReady()) return
 
         val reference = config.referenceLoudness
@@ -78,7 +82,7 @@ class IndexService(
 
         tracks.forEachIndexed { index, item ->
             val key = trackKey(item)
-            if (store.isIndexed(key)) {
+            if (!force && store.isIndexed(key)) {
                 skipped++
                 return@forEachIndexed
             }

@@ -47,6 +47,13 @@
         },
         {
           "type": "button",
+          "title": "重新全量索引",
+          "summary": "重新测量并写入曲库中的每一首歌曲，忽略已有的索引记录（用于修正错误数据，需要 FFmpeg）",
+          "arrow_type": "none",
+          "on_click": "com.alierkitten.spw.replaygain.MainPlugin.onReindexAllButtonClick"
+        },
+        {
+          "type": "button",
           "title": "索引当前播放歌曲",
           "summary": "仅处理当前正在播放的歌曲",
           "arrow_type": "none",
