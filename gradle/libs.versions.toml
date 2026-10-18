@@ -1,0 +1,13 @@
+[versions]
+kotlin = "2.4.20"
+spw-workshop-api = "0.1.0-dev22"
+jaudiotagger = "3.0.1"
+sqlite-jdbc = "3.46.1.3"
+
+[libraries]
+spw-workshop-api = { group = "com.github.Moriafly", name = "spw-workshop-api", version.ref = "spw-workshop-api" }
+jaudiotagger = { group = "net.jthink", name = "jaudiotagger", version.ref = "jaudiotagger" }
+sqlite-jdbc = { group = "org.xerial", name = "sqlite-jdbc", version.ref = "sqlite-jdbc" }
+
+[plugins]
+jetbrains-kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

@@ -1,0 +1,52 @@
+{
+  "configs": [
+    {
+      "title": "ReplayGain",
+      "config": "config.json",
+      "preferences": [
+        {
+          "key": "replaygain.referenceLoudness",
+          "type": "seekbar",
+          "title": "参考响度 (LUFS)",
+          "default_value": -18.0,
+          "min": -30.0,
+          "max": 0.0
+        },
+        {
+          "key": "replaygain.autoIndexOnStart",
+          "type": "switch",
+          "title": "启动时自动补扫未索引歌曲",
+          "summary": "插件启用后自动测量并写入尚未索引的曲目",
+          "default_value": true
+        },
+        {
+          "key": "replaygain.writeTags",
+          "type": "switch",
+          "title": "将结果写入文件标签",
+          "summary": "关闭后仅测量并记录到数据库，不修改音频文件",
+          "default_value": true
+        }
+      ]
+    },
+    {
+      "title": "索引操作",
+      "config": "config.json",
+      "preferences": [
+        {
+          "type": "button",
+          "title": "索引全部歌曲",
+          "summary": "测量并写入所有尚未索引的歌曲（需要系统已安装 FFmpeg）",
+          "arrow_type": "none",
+          "on_click": "com.alierkitten.spw.replaygain.MainPlugin.onIndexAllButtonClick"
+        },
+        {
+          "type": "button",
+          "title": "索引当前播放歌曲",
+          "summary": "仅处理当前正在播放的歌曲",
+          "arrow_type": "none",
+          "on_click": "com.alierkitten.spw.replaygain.MainPlugin.onIndexCurrentButtonClick"
+        }
+      ]
+    }
+  ]
+}

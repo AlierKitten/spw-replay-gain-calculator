@@ -1,0 +1,49 @@
+# ===== Gradle =====
+.gradle/
+build/
+
+# ===== Kotlin =====
+.kotlin/
+*.kts
+!*.gradle.kts
+
+# ===== 本机配置（含本地路径，不应提交） =====
+local.properties
+
+# ===== IDE - Android Studio / IntelliJ =====
+.idea/caches/
+.idea/modules/
+.idea/*.iml
+.idea/modules.xml
+.idea/workspace.xml
+.idea/misc.xml
+.idea/gradle.xml
+.idea/compiler.xml
+.idea/kotlinc.xml
+.idea/vcs.xml
+.idea/AndroidProjectSystem.xml
+.idea/runConfigurations.xml
+out/
+*.iml
+
+# ===== 编译产物 =====
+*.class
+*.jar
+*.war
+*.spmod
+!gradle/wrapper/gradle-wrapper.jar
+
+# ===== 日志 =====
+*.log
+hs_err_pid*
+replay_pid*
+
+# ===== 操作系统 =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== 临时文件 =====
+*.tmp
+*.bak
+*~
