@@ -5,11 +5,11 @@ plugins {
     id("java-library")
     id("org.jetbrains.kotlin.kapt")
     alias(libs.plugins.jetbrains.kotlin.jvm)
-    id("com.xuncorp.spw.workshop") version "0.1.0-dev22"
+    id("com.xuncorp.spw.workshop") version "0.1.0-dev23"
 }
 
 group = "com.alierkitten.spw.replaygain"
-version = "1.0.4"
+version = "1.0.5"
 
 java {
     sourceCompatibility = JavaVersion.VERSION_25

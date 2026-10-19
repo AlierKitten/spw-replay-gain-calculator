@@ -1,6 +1,7 @@
 package com.alierkitten.spw.replaygain
 
 import com.alierkitten.spw.replaygain.config.PluginConfig
+import com.alierkitten.spw.replaygain.host.HostLibraryRefresher
 import com.alierkitten.spw.replaygain.index.IndexService
 import com.alierkitten.spw.replaygain.index.IndexStore
 import com.alierkitten.spw.replaygain.replaygain.ReplayGainEngine
@@ -18,8 +19,6 @@ class MainPlugin(
     private var indexService: IndexService? = null
 
     override fun start() {
-        instance = this
-
         val pluginConfig = PluginConfig.create()
         pluginConfig.observeChanges()
         pluginConfig.normalizeReferenceLoudness()
@@ -44,9 +43,14 @@ class MainPlugin(
             engine = ReplayGainEngine(ffmpegLocator),
             tagWriter = TagWriter(),
             config = pluginConfig,
-            ffmpegLocator = ffmpegLocator
+            ffmpegLocator = ffmpegLocator,
+            hostRefresher = HostLibraryRefresher(),
         )
         indexService = service
+
+        // Publish instance only after the service is fully constructed so the host UI
+        // cannot see a half-initialised plugin via button callbacks.
+        instance = this
 
         if (pluginConfig.autoIndexOnStart && ffmpeg != null) {
             service.indexAll()
@@ -102,6 +106,17 @@ class MainPlugin(
                 return
             }
             service.indexCurrent()
+        }
+
+        @JvmStatic
+        @JvmName("onTriggerHostRefreshButtonClick")
+        fun onTriggerHostRefreshButtonClick() {
+            val service = instance?.indexService
+            if (service == null) {
+                WorkshopApi.ui.toast("插件尚未启动", WorkshopApi.Ui.ToastType.Warning)
+                return
+            }
+            service.triggerHostRefresh()
         }
 
         @JvmStatic

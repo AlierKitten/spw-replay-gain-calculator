@@ -67,6 +67,26 @@
           "on_click": "com.alierkitten.spw.replaygain.MainPlugin.onCleanupReplayGainTagsButtonClick"
         }
       ]
+    },
+    {
+      "title": "实验室(不保证功能稳定性)",
+      "config": "config.json",
+      "preferences": [
+        {
+          "key": "replaygain.triggerHostScan",
+          "type": "switch",
+          "title": "测量后触发宿主曲库刷新",
+          "summary": "实验性：测量并写入标签后，通过反射触发 Salt Player 自身的曲库刷新，让新增的 ReplayGain 标签立刻生效；失败时回退为提示手动刷新，不影响插件其余功能",
+          "default_value": false
+        },
+        {
+          "type": "button",
+          "title": "触发宿主曲库刷新",
+          "summary": "实验性：通过反射调用 Salt Player 自身的「刷新音乐库」入口，立即重新读取已写入的 ReplayGain 标签；可重复点击，入口失效时会出现警告提示",
+          "arrow_type": "none",
+          "on_click": "com.alierkitten.spw.replaygain.MainPlugin.onTriggerHostRefreshButtonClick"
+        }
+      ]
     }
   ]
 }

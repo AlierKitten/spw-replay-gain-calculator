@@ -1,6 +1,8 @@
 package com.alierkitten.spw.replaygain.index
 
 import com.alierkitten.spw.replaygain.config.PluginConfig
+import com.alierkitten.spw.replaygain.host.HostLibraryRefresher
+import com.alierkitten.spw.replaygain.host.RefreshResult
 import com.alierkitten.spw.replaygain.replaygain.ReplayGainEngine
 import com.alierkitten.spw.replaygain.replaygain.ReplayGainTags
 import com.alierkitten.spw.replaygain.replaygain.TagWriter
@@ -12,24 +14,35 @@ import java.io.File
 import java.util.concurrent.CompletionException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Orchestrates the index pipeline: read tracks -> filter unindexed -> measure ->
- * write tags -> persist.
+ * write tags -> persist -> (optionally) trigger a host library refresh so the
+ * newly written tags are picked up immediately by Salt Player's "volume balance".
  */
 class IndexService(
     private val store: IndexStore,
     private val engine: ReplayGainEngine,
     private val tagWriter: TagWriter,
     private val config: PluginConfig,
-    private val ffmpegLocator: () -> String?
+    private val ffmpegLocator: () -> String?,
+    private val hostRefresher: HostLibraryRefresher,
 ) {
     private val executor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "spw-replaygain-indexer").apply { isDaemon = true }
     }
 
     @Volatile
-    private var busy = false
+    private var busy = AtomicBoolean(false)
+
+    /**
+     * Independent guard for the standalone "trigger host refresh" entry. It is checked
+     * before submitting so repeated button presses cannot enqueue multiple rebuild calls
+     * on the indexer executor.
+     */
+    @Volatile
+    private var refreshInFlight = AtomicBoolean(false)
 
     fun indexAll() {
         submit { runIndexAll(force = false) }
@@ -43,16 +56,37 @@ class IndexService(
         submit { runIndexCurrent() }
     }
 
+    fun triggerHostRefresh() {
+        // Deduplicate: rapid button clicks would otherwise queue N reflective calls on
+        // the executor, each of which triggers a full host library rebuild.
+        if (!refreshInFlight.compareAndSet(false, true)) {
+            toast("宿主曲库刷新请求已在执行中", WorkshopApi.Ui.ToastType.Warning)
+            return
+        }
+        executor.submit {
+            try {
+                runTriggerHostRefresh()
+            } catch (error: Throwable) {
+                log("刷新任务失败: ${error.message}", error)
+            } finally {
+                refreshInFlight.set(false)
+            }
+        }
+    }
+
+    fun cleanupReplayGainTags() {
+        submit { runCleanupReplayGainTags() }
+    }
+
     fun shutdown() {
         executor.shutdownNow()
     }
 
     private fun submit(task: () -> Unit) {
-        if (busy) {
+        if (!busy.compareAndSet(false, true)) {
             toast("ReplayGain 索引任务正在进行中", WorkshopApi.Ui.ToastType.Warning)
             return
         }
-        busy = true
         executor.submit {
             try {
                 task()
@@ -60,7 +94,7 @@ class IndexService(
                 log("索引任务失败: ${error.message}", error)
                 toast("ReplayGain 索引失败: ${error.message}", WorkshopApi.Ui.ToastType.Error)
             } finally {
-                busy = false
+                busy.set(false)
             }
         }
     }
@@ -100,6 +134,7 @@ class IndexService(
             "ReplayGain 完成：处理 $processed，跳过 $skipped，失败 $failed",
             WorkshopApi.Ui.ToastType.Success
         )
+        finishWithHostRefresh(processed)
     }
 
     private fun runIndexCurrent() {
@@ -129,14 +164,32 @@ class IndexService(
             return
         }
 
-        when (processTrack(item, reference, writeTags)) {
-            Outcome.DONE -> toast("已索引《${item.title}》", WorkshopApi.Ui.ToastType.Success)
-            else -> toast("索引《${item.title}》失败", WorkshopApi.Ui.ToastType.Error)
+        val processed = when (processTrack(item, reference, writeTags)) {
+            Outcome.DONE -> {
+                toast("已索引《${item.title}》", WorkshopApi.Ui.ToastType.Success)
+                1
+            }
+            else -> {
+                toast("索引《${item.title}》失败", WorkshopApi.Ui.ToastType.Error)
+                0
+            }
         }
+        finishWithHostRefresh(processed)
     }
 
-    fun cleanupReplayGainTags() {
-        submit { runCleanupReplayGainTags() }
+    private fun runTriggerHostRefresh() {
+        when (val result = hostRefresher.trigger()) {
+            RefreshResult.Triggered ->
+                toast("已请求宿主刷新曲库", WorkshopApi.Ui.ToastType.Success)
+            RefreshResult.Unavailable -> {
+                log("宿主扫描入口未配置或不可用")
+                toast("当前 Salt Player 版本未提供反射入口，请手动刷新音乐库", WorkshopApi.Ui.ToastType.Warning)
+            }
+            is RefreshResult.Failed -> {
+                log("宿主扫描入口调用失败: ${result.reason}")
+                toast("未能触发宿主曲库刷新，请手动刷新音乐库", WorkshopApi.Ui.ToastType.Warning)
+            }
+        }
     }
 
     private fun runCleanupReplayGainTags() {
@@ -170,6 +223,30 @@ class IndexService(
             "增益标签清理完成：清理 $cleaned，跳过 $skipped",
             WorkshopApi.Ui.ToastType.Success
         )
+    }
+
+    /**
+     * After a measurement run, optionally trigger a host-side library refresh so Salt
+     * Player re-reads the freshly written ReplayGain tags. Skipped when nothing was
+     * actually processed (no point kicking off a full rebuild) or when the user opted
+     * out via [PluginConfig.triggerHostScan]. Always degrades gracefully: a failed
+     * reflection call only emits one log line and one toast.
+     */
+    private fun finishWithHostRefresh(processed: Int) {
+        if (!config.triggerHostScan) return
+        if (processed <= 0) return
+        when (val result = hostRefresher.trigger()) {
+            RefreshResult.Triggered ->
+                toast("已请求宿主刷新曲库（ReplayGain 即将生效）", WorkshopApi.Ui.ToastType.Success)
+            RefreshResult.Unavailable -> {
+                log("宿主扫描入口不可用，请手动刷新音乐库")
+                toast("未能触发宿主曲库刷新，请手动刷新音乐库", WorkshopApi.Ui.ToastType.Warning)
+            }
+            is RefreshResult.Failed -> {
+                log("宿主扫描入口调用失败: ${result.reason}")
+                toast("未能触发宿主曲库刷新，请手动刷新音乐库", WorkshopApi.Ui.ToastType.Warning)
+            }
+        }
     }
 
     private fun ensureReady(): Boolean {

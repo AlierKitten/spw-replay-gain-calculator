@@ -17,6 +17,7 @@ object ConfigKeys {
     const val AUTO_INDEX_ON_START = "replaygain.autoIndexOnStart"
     const val WRITE_TAGS = "replaygain.writeTags"
     const val FFMPEG_PATH = "replaygain.ffmpegPath"
+    const val TRIGGER_HOST_SCAN = "replaygain.triggerHostScan"
 }
 
 class PluginConfig private constructor(
@@ -37,6 +38,17 @@ class PluginConfig private constructor(
 
     val writeTags: Boolean
         get() = helper.get(ConfigKeys.WRITE_TAGS, true)
+
+    /**
+     * When true (the default), every measurement run that actually writes tags to a
+     * file is followed by a reflective call into Salt Player's internal
+     * `RepoService.rebuildMusicLibrary()`, so the freshly written ReplayGain tags
+     * take effect immediately. Disable this if the reflective call misbehaves on a
+     * future Salt Player build; the plugin then reverts to the previous behaviour
+     * where users had to refresh the library manually.
+     */
+    val triggerHostScan: Boolean
+        get() = helper.get(ConfigKeys.TRIGGER_HOST_SCAN, true)
 
     /**
      * User supplied FFmpeg location. May point at the executable itself or at the
