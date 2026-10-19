@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" width="1000" height="1000" role="img" aria-labelledby="coverTitle coverDesc">
+  <title id="coverTitle">Replay Gain Calculator — Salt Player Workshop plugin cover</title>
+  <desc id="coverDesc">Minimalist dark cover for the ReplayGain Calculator plugin, with a horizontal loudness slider.</desc>
+
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0E0E10"/>
+      <stop offset="100%" stop-color="#18181C"/>
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#FFB454"/>
+      <stop offset="100%" stop-color="#FFCD7E"/>
+    </linearGradient>
+    <radialGradient id="vignette" cx="0.5" cy="0.5" r="0.75">
+      <stop offset="55%" stop-color="#000" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0.45"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1000" height="1000" fill="url(#bgGrad)"/>
+  <rect width="1000" height="1000" fill="url(#vignette)"/>
+
+  <!-- Top brand mark -->
+  <g transform="translate(500,140)">
+    <text x="0" y="0" fill="#9B9BA3" font-family="'Inter','SF Pro Display','Helvetica Neue',Arial,system-ui,sans-serif" font-weight="600" font-size="16" text-anchor="middle" letter-spacing="6">SPW  WORKSHOP</text>
+    <line x1="-22" y1="18" x2="22" y2="18" stroke="#FFB454" stroke-width="2" stroke-linecap="round"/>
+  </g>
+
+  <!-- Plugin subtitle -->
+  <text x="500" y="200" fill="#6C6C73" font-family="'Inter','Helvetica Neue',Arial,system-ui,sans-serif" font-size="20" text-anchor="middle" letter-spacing="3" font-weight="500">FOR  SALT  PLAYER</text>
+
+  <!-- Main title -->
+  <g fill="#F5F5F7" font-family="'Inter','SF Pro Display','Helvetica Neue',Arial,system-ui,sans-serif" font-weight="700" text-anchor="middle">
+    <text x="500" y="430" font-size="110" letter-spacing="-3" textLength="760" lengthAdjust="spacingAndGlyphs">Replay Gain</text>
+    <text x="500" y="555" font-size="110" letter-spacing="-3" textLength="760" lengthAdjust="spacingAndGlyphs">Calculator</text>
+  </g>
+
+  <!-- Tagline strip -->
+  <text x="500" y="620" fill="#9B9BA3" font-family="'Inter','Helvetica Neue',Arial,system-ui,sans-serif" font-size="50" text-anchor="middle" letter-spacing="40" font-weight="800">回放增益计算器</text>
+
+  <!-- Slider group -->
+  <g transform="translate(0,760)">
+    <!-- Label above slider -->
+    <text x="500" y="-32" fill="#6C6C73" font-family="'Inter','Helvetica Neue',Arial,system-ui,sans-serif" font-size="14" text-anchor="middle" letter-spacing="5" font-weight="600">REFERENCE  LOUDNESS</text>
+
+    <!-- Track background -->
+    <line x1="200" y1="0" x2="800" y2="0" stroke="#2A2A2F" stroke-width="6" stroke-linecap="round"/>
+    <!-- Filled portion (gain applied) -->
+    <line x1="200" y1="0" x2="500" y2="0" stroke="url(#accentGrad)" stroke-width="6" stroke-linecap="round"/>
+    <!-- Knob -->
+    <circle cx="500" cy="0" r="15" fill="#18181C" stroke="#F5F5F7" stroke-width="3"/>
+    <circle cx="500" cy="0" r="5" fill="#FFB454"/>
+
+    <!-- Tick marks -->
+    <g stroke="#3A3A40" stroke-width="1.5">
+      <line x1="200" y1="22" x2="200" y2="32"/>
+      <line x1="350" y1="22" x2="350" y2="32"/>
+      <line x1="500" y1="22" x2="500" y2="32"/>
+      <line x1="650" y1="22" x2="650" y2="32"/>
+      <line x1="800" y1="22" x2="800" y2="32"/>
+    </g>
+    <!-- Tick labels -->
+    <g fill="#7E7E86" font-family="'Inter','Helvetica Neue',Arial,system-ui,sans-serif" font-size="13" text-anchor="middle" font-weight="500">
+      <text x="200" y="55">-24</text>
+      <text x="350" y="55">-18</text>
+      <text x="500" y="55">-12</text>
+      <text x="650" y="55">-6</text>
+      <text x="800" y="55">0</text>
+    </g>
+    <!-- Unit, off to the right -->
+    <text x="800" y="80" fill="#5A5A60" font-family="'Inter','Helvetica Neue',Arial,system-ui,sans-serif" font-size="12" text-anchor="middle" font-weight="600" letter-spacing="3">LUFS</text>
+  </g>
+
+  <!-- Bottom caption -->
+  <text x="500" y="920" fill="#9B9BA3" font-family="'Inter','Helvetica Neue',Arial,system-ui,sans-serif" font-size="22" text-anchor="middle" font-weight="400">为 Salt Player 的「音量平衡」功能准备数据</text>
+
+  <!-- Corner marks -->
+  <g fill="#4A4A50" font-family="'Inter','Helvetica Neue',Arial,system-ui,sans-serif" font-size="13" font-weight="600" letter-spacing="3">
+    <text x="60" y="970">ALIERKITTEN</text>
+    <text x="940" y="970" text-anchor="end">MP3  ·  FLAC  ·  OGG</text>
+  </g>
+</svg>
