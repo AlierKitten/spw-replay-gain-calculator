@@ -61,11 +61,12 @@ class HostLibraryRefresher {
         return try {
             val resolved = resolve(entry) ?: return RefreshResult.Unavailable
             val (cls, method, receiver) = resolved
+            logDiag(
+                "已解析入口: class=${cls.name} method=${method.name} receiver=${receiver?.javaClass?.name} " +
+                    "receiverIdentity=${System.identityHashCode(receiver)}",
+            )
             doInvoke(entry, cls, method, receiver)
         } catch (error: Throwable) {
-            // Catch absolutely everything: reflective access in unknown class loaders can
-            // surface as InaccessibleObjectException, SecurityException, NPE on missing
-            // singletons, or even Errors. The caller treats any failure identically.
             logFailure(entry, error)
             RefreshResult.Failed("${entry.className}.${entry.methodName}: ${error.javaClass.simpleName}")
         }
@@ -74,20 +75,50 @@ class HostLibraryRefresher {
     private fun resolve(entry: HostScanEntry): ResolvedEntry? {
         resolved[entry]?.let { return it }
 
-        val cls = loadClass(entry.className) ?: return null
+        val cls = loadClass(entry.className)
+        if (cls == null) {
+            logDiag("loadClass(${entry.className}) 失败")
+            return null
+        }
         val receiver: Any? = when (val r = entry.receiver) {
             Receiver.Static -> null
             is Receiver.SingletonField -> readSingleton(cls, r.fieldName)
             is Receiver.CompanionField -> readSingleton(cls, r.fieldName)
         }
+        logDiag(
+            "resolve ${entry.className}: receiverRequested=${entry.receiver::class.simpleName} " +
+                "receiverValue=${receiver}",
+        )
         if (entry.receiver !is Receiver.Static && receiver == null) {
-            return null
+            // Fallback for Kotlin `object`: <clinit> may not have run for the class we just
+            // linked. If the host has not yet touched this object, INSTANCE is Java-default null.
+            // Forcing <clinit> via getDeclaredConstructor().newInstance() makes it explicit and
+            // also surfaces any host-side init failures as Failed rather than silent Unavailable.
+            val constructed = try {
+                val ctor = cls.getDeclaredConstructor().apply { isAccessible = true }
+                ctor.newInstance()
+            } catch (error: Throwable) {
+                logDiag("INSTANCE 为空，手动 newInstance 仍失败: ${error.javaClass.simpleName}: ${error.message}")
+                return null
+            }
+            logDiag("INSTANCE 为空，手动 newInstance 成功: $constructed")
+            // Stash so readSingleton picks it up next time
+            return finishResolve(entry, cls, constructed)
         }
 
+        return finishResolve(entry, cls, receiver)
+    }
+
+    private fun finishResolve(
+        entry: HostScanEntry,
+        cls: Class<*>,
+        receiver: Any?,
+    ): ResolvedEntry? {
         val paramClasses = entry.parameterTypes.map(::loadClassOrPrimitive).toTypedArray()
         val method: java.lang.reflect.Method = try {
             cls.getDeclaredMethod(entry.methodName, *paramClasses)
         } catch (error: NoSuchMethodException) {
+            logDiag("getDeclaredMethod 失败: ${error.message}")
             return null
         }
         method.isAccessible = true
@@ -112,19 +143,17 @@ class HostLibraryRefresher {
         val error = arrayOfNulls<Throwable>(1)
         val runner = thread(name = "spw-host-refresh", isDaemon = true) {
             try {
-                method.invoke(receiver)
+                val ret = method.invoke(receiver)
+                logDiag("Method.invoke 已返回: $ret")
             } catch (t: Throwable) {
                 error[0] = unwrap(t)
+                logDiag("Method.invoke 抛异常: ${error[0]?.javaClass?.simpleName}: ${error[0]?.message}")
             } finally {
                 ready.countDown()
             }
         }
         val finished = ready.await(invokeTimeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
         if (!finished) {
-            // The reflective call is still in flight. We cannot force-kill Method.invoke,
-            // but a polite Thread.interrupt() at least signals the daemon to bail out at
-            // the next cooperative cancellation point (kotlinx.coroutines usually honours
-            // it). The thread is daemon so it will not prevent JVM shutdown.
             runner.interrupt()
             logFailure(
                 entry,
@@ -148,24 +177,33 @@ class HostLibraryRefresher {
         field.isAccessible = true
         field.get(null)
     } catch (error: Throwable) {
+        logDiag("readSingleton 异常: ${error.javaClass.simpleName}: ${error.message}")
         null
     }
 
     private fun loadClass(name: String): Class<*>? {
         // Order: WorkshopApi's loader (host-defined, guaranteed to see host classes) →
-        // thread context loader → system loader. Use Class.forName with `false` to avoid
-        // triggering static initialisation of a host class we only need to reflect on.
+        // thread context loader → system loader → call-site loader.
+        // We use initialize=true so Kotlin `object` static initializers (which assign
+        // INSTANCE) actually run; without that, reflection gets a non-initialised Class
+        // and INSTANCE is Java-default null.
         val loaders = listOfNotNull(
             safeClassLoader { com.xuncorp.spw.workshop.api.WorkshopApi::class.java.classLoader },
             safeClassLoader { Thread.currentThread().contextClassLoader },
             safeClassLoader { ClassLoader.getSystemClassLoader() },
+            safeClassLoader { HostLibraryRefresher::class.java.classLoader },
         )
+        val seen = mutableSetOf<ClassLoader>()
         for (loader in loaders) {
+            if (!seen.add(loader)) continue
             try {
-                return Class.forName(name, false, loader)
+                val cls = Class.forName(name, true, loader)
+                logDiag("loadClass(${name}) loader=${loader::class.java.name} OK")
+                return cls
             } catch (_: ClassNotFoundException) {
                 // try next loader
-            } catch (_: Throwable) {
+            } catch (error: Throwable) {
+                logDiag("loadClass(${name}) 抛 ${error.javaClass.simpleName}: ${error.message}")
                 return null
             }
         }
@@ -200,6 +238,10 @@ class HostLibraryRefresher {
             "[ReplayGain] 反射调用宿主扫描入口失败: ${entry.className}.${entry.methodName} " +
                 "(receiver=${entry.receiver}, reason=${entry.rationale}) — ${error.javaClass.simpleName}: ${error.message}",
         )
+    }
+
+    private fun logDiag(message: String) {
+        println("[ReplayGain:host] $message")
     }
 
     private data class ResolvedEntry(
