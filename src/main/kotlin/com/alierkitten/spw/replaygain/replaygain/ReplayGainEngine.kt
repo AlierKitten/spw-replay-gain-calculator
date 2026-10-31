@@ -1,80 +1,36 @@
 package com.alierkitten.spw.replaygain.replaygain
 
+import com.alierkitten.spw.replaygain.replaygain.analyzer.AudioDecoder
+import com.alierkitten.spw.replaygain.replaygain.analyzer.LoudnessAnalyzer
 import java.io.File
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.TimeUnit
 
 /**
- * Measures integrated loudness (LUFS) and true peak by delegating to FFmpeg's
- * `ebur128` filter. No audio decoding is performed in-process.
+ * Measures integrated loudness (LUFS) and true peak entirely in-process,
+ * decoding audio with pure-Java providers and applying an EBU R128 (BS.1770-4)
+ * analysis. No FFmpeg binary or external process is involved.
  */
-class ReplayGainEngine(
-    private val resolveExecutable: () -> String?
-) {
+class ReplayGainEngine {
+
     fun measure(path: String, referenceLoudness: Double): ReplayGainResult {
-        val executable = resolveExecutable()
-            ?: throw IllegalStateException("FFmpeg is not available")
         val file = File(path)
         require(file.isFile) { "File not found: $path" }
 
-        val output = runEbur128(executable, file)
-        // ebur128 prints an instantaneous `I:`/`Peak:` line per interval while it processes;
-        // the first one is the algorithm's initial floor (≈ -70 LUFS) and is useless. The
-        // last match is the converged value that matches the final summary, so use that.
-        val integrated = INTEGRATED_REGEX.findAll(output)
-            .lastOrNull()
-            ?.groupValues
-            ?.getOrNull(1)
-            ?.toDoubleOrNull()
-            ?: throw IllegalStateException("Unable to parse integrated loudness for ${file.name}")
-        val truePeakDb = TRUE_PEAK_REGEX.findAll(output)
-            .lastOrNull()
-            ?.groupValues
-            ?.getOrNull(1)
-            ?.toDoubleOrNull()
-            ?: 0.0
-
-        return ReplayGainResult(
-            integratedLoudness = round2(integrated),
-            truePeakDb = round2(truePeakDb),
-            trackGainDb = round2(referenceLoudness - integrated),
-            trackPeakLinear = round6(Math.pow(10.0, truePeakDb / 20.0)),
-            referenceLoudness = referenceLoudness
-        )
-    }
-
-    private fun runEbur128(executable: String, file: File): String {
-        val process = ProcessBuilder(
-            executable,
-            "-hide_banner",
-            "-nostats",
-            "-i", file.absolutePath,
-            "-af", "ebur128=peak=true",
-            "-f", "null", "-"
-        ).redirectErrorStream(true).start()
-
-        // Drain output concurrently so a full pipe buffer cannot block FFmpeg.
-        val output = CompletableFuture.supplyAsync {
-            process.inputStream.bufferedReader().use { it.readText() }
+        val source = AudioDecoder.open(path)
+        try {
+            val (integrated, truePeakDb) = LoudnessAnalyzer.analyze(source)
+            return ReplayGainResult(
+                integratedLoudness = round2(integrated),
+                truePeakDb = round2(truePeakDb),
+                trackGainDb = round2(referenceLoudness - integrated),
+                trackPeakLinear = round6(Math.pow(10.0, truePeakDb / 20.0)),
+                referenceLoudness = referenceLoudness
+            )
+        } finally {
+            runCatching { source.close() }
         }
-
-        if (!process.waitFor(10, TimeUnit.MINUTES)) {
-            process.destroyForcibly()
-            output.cancel(true)
-            throw IllegalStateException("FFmpeg timed out while measuring ${file.name}")
-        }
-        val exit = process.exitValue()
-        val captured = output.get(30, TimeUnit.SECONDS)
-        if (exit != 0) {
-            throw IllegalStateException("FFmpeg exited with $exit for ${file.name}: ${captured.takeLast(500)}")
-        }
-        return captured
     }
 
     companion object {
-        private val INTEGRATED_REGEX = Regex("""I:\s*(-?\d+(?:\.\d+)?)\s*LUFS""")
-        private val TRUE_PEAK_REGEX = Regex("""Peak:\s*(-?\d+(?:\.\d+)?)\s*dBFS""")
-
         fun round2(value: Double): Double = Math.round(value * 100.0) / 100.0
 
         fun round6(value: Double): Double = Math.round(value * 1_000_000.0) / 1_000_000.0

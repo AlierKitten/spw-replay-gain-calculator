@@ -5,7 +5,6 @@ import com.alierkitten.spw.replaygain.index.IndexService
 import com.alierkitten.spw.replaygain.index.IndexStore
 import com.alierkitten.spw.replaygain.replaygain.ReplayGainEngine
 import com.alierkitten.spw.replaygain.replaygain.TagWriter
-import com.alierkitten.spw.replaygain.util.FfmpegChecker
 import com.xuncorp.spw.workshop.api.PluginContext
 import com.xuncorp.spw.workshop.api.SpwPlugin
 import com.xuncorp.spw.workshop.api.WorkshopApi
@@ -26,29 +25,19 @@ class MainPlugin(
         val reference = pluginConfig.referenceLoudness
         println("[ReplayGain] 参考响度: $reference LUFS")
 
-        val ffmpegLocator = { FfmpegChecker.locate(pluginConfig.ffmpegPath) }
-        val ffmpeg = ffmpegLocator()
-        if (ffmpeg == null) {
-            WorkshopApi.ui.toast(
-                "未检测到 FFmpeg，ReplayGain 测量不可用；请在插件设置中填写 FFmpeg 路径",
-                WorkshopApi.Ui.ToastType.Warning
-            )
-        }
-
         val newStore = IndexStore(pluginConfig.dataDirectory.resolve("replaygain.db"))
         newStore.init()
         store = newStore
 
         val service = IndexService(
             store = newStore,
-            engine = ReplayGainEngine(ffmpegLocator),
+            engine = ReplayGainEngine(),
             tagWriter = TagWriter(),
-            config = pluginConfig,
-            ffmpegLocator = ffmpegLocator
+            config = pluginConfig
         )
         indexService = service
 
-        if (pluginConfig.autoIndexOnStart && ffmpeg != null) {
+        if (pluginConfig.autoIndexOnStart) {
             service.indexAll()
         }
 

@@ -2,7 +2,7 @@
 
 一个 [Salt Player 创意工坊（SPW Workshop）](https://saltplayer.com/workshop/getting-started) 插件，用于为 Salt Player 的「**音量平衡**」功能准备数据。
 
-Salt Player 的「音量平衡」会读取音频文件中的 ReplayGain 标签来统一不同歌曲的播放音量，但**不会自动计算**这些标签。本插件调用系统 **FFmpeg** 测量歌曲响度（EBU R128），计算 **ReplayGain 2.0** 增益并写入文件标签，让「音量平衡」能够正常工作。
+Salt Player 的「音量平衡」会读取音频文件中的 ReplayGain 标签来统一不同歌曲的播放音量，但**不会自动计算**这些标签。本插件使用内置的纯 Java 解码器与 **EBU R128**（ITU-R BS.1770-4）分析测量歌曲响度，计算 **ReplayGain 2.0** 增益并写入文件标签，让「音量平衡」能够正常工作。**无需安装 FFmpeg 或任何外部程序。**
 
 - 插件 ID：`com.alierkitten.spw.replaygain`
 - 构建产物：`build/libs/plugin-com.alierkitten.spw.replaygain-1.0.0.spmod`
@@ -19,10 +19,7 @@ Salt Player 的「音量平衡」会读取音频文件中的 ReplayGain 标签�
 
 - **Salt Player**（支持 Workshop / Mod 的版本）。
 - **JDK 25**（工程通过 `jvmToolchain(25)` 编译）。
-- **FFmpeg**，满足以下任一条件即可：
-  - 在插件设置中填写「FFmpeg 路径」；
-  - 设置环境变量 `FFMPEG_PATH` 指向可执行文件；
-  - `ffmpeg` 已加入系统 `PATH`。
+- 无需安装 FFmpeg 或其它外部程序；响度测量所需的音频解码与 EBU R128 分析均内置在插件内（依赖纯 Java 的 `mp3spi` / `vorbisspi` / `tritonus-all` 解码器，通过 `javax.sound.sampled` 提供服务）。
 
 ## 构建
 
@@ -42,14 +39,13 @@ Salt Player 的「音量平衡」会读取音频文件中的 ReplayGain 标签�
 
 - **自动索引**：开启「启动时自动补扫」后，插件启用时会自动处理尚未索引的歌曲。
 - **手动索引**：配置页提供「索引全部歌曲」「索引当前播放歌曲」按钮。
-- 未安装 FFmpeg 或未授予曲库权限时，插件会提示并跳过，不影响播放器运行。
+- 未授予曲库权限、或遇到无法解码的音频文件时，插件会提示并跳过，不影响播放器运行。
 
 ## 配置项
 
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | 参考响度 (LUFS) | 文本 | `-18.0` | 目标响度，范围 `-30.0` ~ `0.0` |
-| FFmpeg 路径 | 文本 | 空 | 留空则回退到 `FFMPEG_PATH` / `PATH` |
 | 启动时自动补扫 | 开关 | `false` | 启用后自动处理未索引曲目 |
 | 将结果写入文件标签 | 开关 | `true` | 关闭后仅测量并记录到数据库 |
 
@@ -72,9 +68,12 @@ spw-replay-gain-calculator/
     ├── kotlin/com/alierkitten/spw/replaygain/
     │   ├── MainPlugin.kt            # 插件入口、生命周期、自动补扫
     │   ├── config/PluginConfig.kt   # 配置读取与数据目录
-    │   ├── util/FfmpegChecker.kt    # FFmpeg 探测
     │   ├── replaygain/
-    │   │   ├── ReplayGainEngine.kt  # FFmpeg ebur128 测量与增益计算
+    │   │   ├── ReplayGainEngine.kt  # 内置 EBU R128 测量与增益计算
+    │   │   ├── analyzer/
+    │   │   │   ├── AudioDecoder.kt  # 纯 Java 解码 MP3/FLAC/OGG 为 PCM
+    │   │   │   ├── Resampler.kt     # 窗函数 sinc 重采样
+    │   │   │   └── LoudnessAnalyzer.kt # K 加权、门控与真峰
     │   │   ├── ReplayGainResult.kt  # 测量结果
     │   │   └── TagWriter.kt         # MP3/FLAC/OGG 标签写入
     │   └── index/
@@ -121,5 +120,5 @@ CREATE TABLE indexed_tracks (
 ## 限制
 
 - 支持 **MP3 / FLAC / OGG**，暂不支持 M4A / MP4。
-- 必须安装 FFmpeg，否则无法测量响度。
+- 无需安装 FFmpeg；解码与分析均在插件内完成（纯 Java，无外部二进制）。
 - 新导入的歌曲会在下次启用插件或手动点击按钮时被处理。

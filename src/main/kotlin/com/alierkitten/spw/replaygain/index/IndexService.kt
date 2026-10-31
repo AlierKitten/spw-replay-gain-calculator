@@ -2,6 +2,7 @@ package com.alierkitten.spw.replaygain.index
 
 import com.alierkitten.spw.replaygain.config.PluginConfig
 import com.alierkitten.spw.replaygain.replaygain.ReplayGainEngine
+import com.alierkitten.spw.replaygain.replaygain.ReplayGainResult
 import com.alierkitten.spw.replaygain.replaygain.ReplayGainTags
 import com.alierkitten.spw.replaygain.replaygain.TagWriter
 import com.xuncorp.spw.workshop.api.PluginPermission
@@ -9,6 +10,7 @@ import com.xuncorp.spw.workshop.api.PluginPermissionDeniedException
 import com.xuncorp.spw.workshop.api.PlaybackExtensionPoint.MediaItem
 import com.xuncorp.spw.workshop.api.WorkshopApi
 import java.io.File
+import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.CompletionException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -21,8 +23,7 @@ class IndexService(
     private val store: IndexStore,
     private val engine: ReplayGainEngine,
     private val tagWriter: TagWriter,
-    private val config: PluginConfig,
-    private val ffmpegLocator: () -> String?
+    private val config: PluginConfig
 ) {
     private val executor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "spw-replaygain-indexer").apply { isDaemon = true }
@@ -30,6 +31,9 @@ class IndexService(
 
     @Volatile
     private var busy = false
+
+    /** First failure reason, surfaced to the user via the summary toast. */
+    private var firstError: String? = null
 
     fun indexAll() {
         submit { runIndexAll(force = false) }
@@ -68,6 +72,7 @@ class IndexService(
     private fun runIndexAll(force: Boolean) {
         if (!ensureReady()) return
 
+        firstError = null
         val reference = config.referenceLoudness
         val writeTags = config.writeTags
         val tracks = fetchAllTracks()
@@ -96,15 +101,19 @@ class IndexService(
             }
         }
 
-        toast(
-            "ReplayGain 完成：处理 $processed，跳过 $skipped，失败 $failed",
-            WorkshopApi.Ui.ToastType.Success
-        )
+        val summary = buildString {
+            append("ReplayGain 完成：处理 $processed，跳过 $skipped，失败 $failed")
+            if (failed > 0 && firstError != null) {
+                append("；首个错误：$firstError")
+            }
+        }
+        toast(summary, WorkshopApi.Ui.ToastType.Success)
     }
 
     private fun runIndexCurrent() {
         if (!ensureReady()) return
 
+        firstError = null
         val item = try {
             WorkshopApi.playback.getCurrentMediaItem()
         } catch (error: Throwable) {
@@ -131,7 +140,10 @@ class IndexService(
 
         when (processTrack(item, reference, writeTags)) {
             Outcome.DONE -> toast("已索引《${item.title}》", WorkshopApi.Ui.ToastType.Success)
-            else -> toast("索引《${item.title}》失败", WorkshopApi.Ui.ToastType.Error)
+            else -> toast(
+                "索引《${item.title}》失败${if (firstError != null) "：$firstError" else ""}",
+                WorkshopApi.Ui.ToastType.Error
+            )
         }
     }
 
@@ -173,13 +185,6 @@ class IndexService(
     }
 
     private fun ensureReady(): Boolean {
-        if (ffmpegLocator() == null) {
-            toast(
-                "未检测到 FFmpeg，无法测量响度；请在插件设置中填写 FFmpeg 路径",
-                WorkshopApi.Ui.ToastType.Error
-            )
-            return false
-        }
         if (!WorkshopApi.manager.isPermissionGranted(PluginPermission.LIBRARY_READ)) {
             toast("缺少曲库读取权限（LIBRARY_READ）", WorkshopApi.Ui.ToastType.Error)
             return false
@@ -222,9 +227,10 @@ class IndexService(
         }
 
         val result = try {
-            engine.measure(path, reference)
+            measureWithTimeout(path, reference, 120_000L)
         } catch (error: Throwable) {
             log("测量失败: $path", error)
+            if (firstError == null) firstError = concise(error, path)
             return Outcome.FAILED
         }
 
@@ -249,8 +255,41 @@ class IndexService(
 
     private fun trackKey(item: MediaItem): String = item.id.ifBlank { item.path }
 
+    /**
+     * Runs [ReplayGainEngine.measure] on a dedicated thread and aborts it after
+     * [timeoutMs] if it has not returned. This guarantees that a pathological
+     * decoder/decode loop (which would otherwise hang the single-threaded index
+     * job forever and leave `busy` stuck) can never block the whole pipeline:
+     * the offending track is simply failed and indexing continues.
+     */
+    private fun measureWithTimeout(path: String, reference: Double, timeoutMs: Long): ReplayGainResult {
+        val box = AtomicReference<ReplayGainResult>()
+        val err = AtomicReference<Throwable>()
+        val worker = Thread({
+            try {
+                box.set(engine.measure(path, reference))
+            } catch (e: Throwable) {
+                err.set(e)
+            }
+        }, "spw-rg-measure").apply { isDaemon = true; start() }
+        worker.join(timeoutMs)
+        if (worker.isAlive) {
+            worker.interrupt()
+            throw RuntimeException("ReplayGain 测量超时（疑似解码死循环）: $path")
+        }
+        err.get()?.let { throw it }
+        return box.get() ?: throw RuntimeException("ReplayGain 测量无结果: $path")
+    }
+
     private fun unwrap(error: Throwable): Throwable =
         (error as? CompletionException)?.cause ?: error
+
+    private fun concise(error: Throwable, path: String): String {
+        val cause = unwrap(error)
+        val name = cause::class.java.simpleName
+        val msg = cause.message?.lineSequence()?.firstOrNull()?.take(120) ?: "未知错误"
+        return "$name: $msg"
+    }
 
     private fun toast(message: String, type: WorkshopApi.Ui.ToastType) {
         WorkshopApi.ui.toast(message, type)

@@ -33,13 +33,21 @@ dependencies {
     // Bundled into the .spmod
     implementation(libs.jaudiotagger)
     implementation(libs.sqlite.jdbc)
+
+    // Pure-Java audio decoders (no native FFmpeg). MP3 via jlayer (bundled in
+    // mp3spi), OGG/Vorbis via JOrbis (bundled in vorbisspi), FLAC via JFLAC.
+    // All decode directly without relying on javax.sound.sampled SPI discovery,
+    // which cannot see plugin-bundled providers inside the host's class loader.
+    implementation(libs.mp3spi)
+    implementation(libs.vorbisspi)
+    implementation(libs.jflac)
 }
 
 spmod {
     PluginClass = "com.alierkitten.spw.replaygain.MainPlugin"
     PluginId = "com.alierkitten.spw.replaygain"
     PluginName = "ReplayGain Calculator"
-    PluginDescription = "Measures EBU R128 loudness with FFmpeg and writes ReplayGain tags to MP3/FLAC/OGG metadata."
+    PluginDescription = "Measures EBU R128 loudness in-process (no FFmpeg required) and writes ReplayGain tags to MP3/FLAC/OGG metadata."
     PluginVersion = project.version.toString()
     PluginProvider = "alierkitten"
     PluginOpenSourceUrl = "https://github.com/AlierKitten/spw-replay-gain-calculator"

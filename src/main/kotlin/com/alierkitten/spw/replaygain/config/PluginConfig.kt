@@ -16,7 +16,6 @@ object ConfigKeys {
     const val REFERENCE_LOUDNESS = "replaygain.referenceLoudness"
     const val AUTO_INDEX_ON_START = "replaygain.autoIndexOnStart"
     const val WRITE_TAGS = "replaygain.writeTags"
-    const val FFMPEG_PATH = "replaygain.ffmpegPath"
 }
 
 class PluginConfig private constructor(
@@ -37,16 +36,6 @@ class PluginConfig private constructor(
 
     val writeTags: Boolean
         get() = helper.get(ConfigKeys.WRITE_TAGS, true)
-
-    /**
-     * User supplied FFmpeg location. May point at the executable itself or at the
-     * directory containing it; blank means "fall back to auto detection".
-     */
-    val ffmpegPath: String
-        get() = runCatching {
-            val raw: String = helper.get(ConfigKeys.FFMPEG_PATH, "")
-            raw.trim()
-        }.getOrDefault("")
 
     /**
      * All persistent plugin data lives next to the configuration file, i.e.
