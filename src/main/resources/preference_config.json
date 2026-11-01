@@ -31,6 +31,13 @@
           "title": "将结果写入文件标签",
           "summary": "关闭后仅测量并记录到数据库，不修改音频文件",
           "default_value": true
+        },
+        {
+          "key": "replaygain.parallelism",
+          "type": "edittext",
+          "title": "同时计算的歌曲数",
+          "summary": "0 = 按 CPU 核心数自动决定；其它正值范围 1 ~ 64。修改后需重启插件生效",
+          "default_value": "0"
         }
       ]
     },
@@ -41,14 +48,14 @@
         {
           "type": "button",
           "title": "索引全部歌曲",
-          "summary": "测量并写入所有尚未索引的歌曲（需要系统已安装 FFmpeg）",
+          "summary": "测量并写入所有尚未索引的歌曲",
           "arrow_type": "none",
           "on_click": "com.alierkitten.spw.replaygain.MainPlugin.onIndexAllButtonClick"
         },
         {
           "type": "button",
           "title": "重新全量索引",
-          "summary": "重新测量并写入曲库中的每一首歌曲，忽略已有的索引记录（用于修正错误数据，需要 FFmpeg）",
+          "summary": "重新测量并写入曲库中的每一首歌曲，忽略已有的索引记录",
           "arrow_type": "none",
           "on_click": "com.alierkitten.spw.replaygain.MainPlugin.onReindexAllButtonClick"
         },
@@ -62,7 +69,7 @@
         {
           "type": "button",
           "title": "清理歌曲增益标签",
-          "summary": "移除所有歌曲文件中的 ReplayGain 增益标签（REPLAYGAIN_TRACK_GAIN / TRACK_PEAK / REFERENCE_LOUDNESS），无需 FFmpeg",
+          "summary": "移除所有歌曲文件中的 ReplayGain 增益标签（REPLAYGAIN_TRACK_GAIN / TRACK_PEAK / REFERENCE_LOUDNESS）",
           "arrow_type": "none",
           "on_click": "com.alierkitten.spw.replaygain.MainPlugin.onCleanupReplayGainTagsButtonClick"
         }

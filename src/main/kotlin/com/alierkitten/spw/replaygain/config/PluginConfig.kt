@@ -17,6 +17,7 @@ object ConfigKeys {
     const val AUTO_INDEX_ON_START = "replaygain.autoIndexOnStart"
     const val WRITE_TAGS = "replaygain.writeTags"
     const val FFMPEG_PATH = "replaygain.ffmpegPath"
+    const val PARALLELISM = "replaygain.parallelism"
 }
 
 class PluginConfig private constructor(
@@ -37,6 +38,21 @@ class PluginConfig private constructor(
 
     val writeTags: Boolean
         get() = helper.get(ConfigKeys.WRITE_TAGS, true)
+
+    /**
+     * Number of tracks measured concurrently.
+     *
+     * 0 (default) means "auto" — use every available processor
+     */
+    val parallelism: Int
+        get() {
+            val raw = runCatching { helper.get(ConfigKeys.PARALLELISM, "") }.getOrDefault("")
+            val fromConfig = when (raw) {
+                else -> raw.trim().toIntOrNull()
+            } ?: 0
+            if (fromConfig > 0) return fromConfig.coerceIn(1, 64)
+            return Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+        }
 
     /**
      * User supplied FFmpeg location. May point at the executable itself or at the

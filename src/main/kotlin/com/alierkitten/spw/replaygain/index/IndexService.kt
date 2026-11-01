@@ -9,13 +9,18 @@ import com.xuncorp.spw.workshop.api.PluginPermissionDeniedException
 import com.xuncorp.spw.workshop.api.PlaybackExtensionPoint.MediaItem
 import com.xuncorp.spw.workshop.api.WorkshopApi
 import java.io.File
+import java.util.concurrent.Callable
 import java.util.concurrent.CompletionException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Orchestrates the index pipeline: read tracks -> filter unindexed -> measure ->
  * write tags -> persist.
+ *
+ * Measurement is CPU-bound (FFmpeg decodes + the ebur128 filter), so tracks are
+ * measured concurrently on a fixed pool sized by [PluginConfig.parallelism].
  */
 class IndexService(
     private val store: IndexStore,
@@ -24,9 +29,17 @@ class IndexService(
     private val config: PluginConfig,
     private val ffmpegLocator: () -> String?
 ) {
-    private val executor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
+    /** Single thread that owns the `busy` flag and serialises index runs. */
+    private val controller: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "spw-replaygain-indexer").apply { isDaemon = true }
     }
+
+    /** Pool that actually runs concurrent track measurements / tag cleanups. */
+    private val workers: ExecutorService = Executors.newFixedThreadPool(config.parallelism) { runnable ->
+        Thread(runnable, "spw-replaygain-worker-${workerCounter.incrementAndGet()}").apply { isDaemon = true }
+    }
+
+    private val workerCounter = AtomicInteger(0)
 
     @Volatile
     private var busy = false
@@ -44,7 +57,8 @@ class IndexService(
     }
 
     fun shutdown() {
-        executor.shutdownNow()
+        controller.shutdownNow()
+        workers.shutdownNow()
     }
 
     private fun submit(task: () -> Unit) {
@@ -53,7 +67,7 @@ class IndexService(
             return
         }
         busy = true
-        executor.submit {
+        controller.submit {
             try {
                 task()
             } catch (error: Throwable) {
@@ -68,6 +82,8 @@ class IndexService(
     private fun runIndexAll(force: Boolean) {
         if (!ensureReady()) return
 
+        toast("ReplayGain 开始索引…", WorkshopApi.Ui.ToastType.Success)
+
         val reference = config.referenceLoudness
         val writeTags = config.writeTags
         val tracks = fetchAllTracks()
@@ -76,34 +92,62 @@ class IndexService(
             return
         }
 
-        var processed = 0
-        var skipped = 0
-        var failed = 0
+        // Skip already-indexed tracks up front; the remaining work is what we fan
+        // out across the worker pool.
+        val pending = if (force) {
+            tracks
+        } else {
+            tracks.filterNot { store.isIndexed(trackKey(it)) }
+        }
+        val skippedInitial = tracks.size - pending.size
 
-        tracks.forEachIndexed { index, item ->
-            val key = trackKey(item)
-            if (!force && store.isIndexed(key)) {
-                skipped++
-                return@forEachIndexed
-            }
-            when (processTrack(item, reference, writeTags)) {
-                Outcome.DONE -> processed++
-                Outcome.SKIPPED -> skipped++
-                Outcome.FAILED -> failed++
-            }
-            if ((index + 1) % PROGRESS_INTERVAL == 0) {
-                toast("ReplayGain 进度 ${index + 1}/${tracks.size}", WorkshopApi.Ui.ToastType.Success)
+        if (pending.isEmpty()) {
+            toast("ReplayGain：全部 $skippedInitial 首已索引，无需处理", WorkshopApi.Ui.ToastType.Success)
+            return
+        }
+
+        val processed = AtomicInteger(0)
+        val skipped = AtomicInteger(skippedInitial)
+        val failed = AtomicInteger(0)
+        val completed = AtomicInteger(0)
+
+        val tasks = pending.map { item ->
+            Callable {
+                val outcome = processTrack(item, reference, writeTags)
+                when (outcome) {
+                    Outcome.DONE -> processed.incrementAndGet()
+                    Outcome.SKIPPED -> skipped.incrementAndGet()
+                    Outcome.FAILED -> failed.incrementAndGet()
+                }
+                val done = completed.incrementAndGet()
+                if (done % PROGRESS_INTERVAL == 0) {
+                    toast("ReplayGain 进度 $done/${pending.size}", WorkshopApi.Ui.ToastType.Success)
+                }
             }
         }
 
+        try {
+            // invokeAll blocks until every track has been measured (or the pool is
+            // shut down). Concurrent FFmpeg processes saturate the CPU instead of
+            // decoding 800 files strictly one after another.
+            workers.invokeAll(tasks)
+        } catch (error: InterruptedException) {
+            Thread.currentThread().interrupt()
+            log("索引被中断", error)
+            toast("ReplayGain 索引被中断", WorkshopApi.Ui.ToastType.Warning)
+            return
+        }
+
         toast(
-            "ReplayGain 完成：处理 $processed，跳过 $skipped，失败 $failed",
+            "ReplayGain 完成：处理 ${processed.get()}，跳过 ${skipped.get()}，失败 ${failed.get()}",
             WorkshopApi.Ui.ToastType.Success
         )
     }
 
     private fun runIndexCurrent() {
         if (!ensureReady()) return
+
+        toast("ReplayGain 开始索引当前歌曲…", WorkshopApi.Ui.ToastType.Success)
 
         val item = try {
             WorkshopApi.playback.getCurrentMediaItem()
@@ -142,32 +186,46 @@ class IndexService(
     private fun runCleanupReplayGainTags() {
         if (!ensureCleanupReady()) return
 
+        toast("ReplayGain 开始清理增益标签…", WorkshopApi.Ui.ToastType.Success)
+
         val tracks = fetchAllTracks()
         if (tracks.isEmpty()) {
             toast("曲库为空，无需清理", WorkshopApi.Ui.ToastType.Warning)
             return
         }
 
-        var cleaned = 0
-        var skipped = 0
-        tracks.forEachIndexed { index, item ->
-            val path = item.path
-            if (path.isBlank() || !File(path).isFile || !tagWriter.supports(path)) {
-                skipped++
-                return@forEachIndexed
-            }
-            if (tagWriter.removeReplayGainTags(path)) {
-                cleaned++
-            } else {
-                skipped++
-            }
-            if ((index + 1) % PROGRESS_INTERVAL == 0) {
-                toast("增益标签清理进度 ${index + 1}/${tracks.size}", WorkshopApi.Ui.ToastType.Success)
+        val cleaned = AtomicInteger(0)
+        val skipped = AtomicInteger(0)
+        val completed = AtomicInteger(0)
+        val total = tracks.size
+
+        val tasks = tracks.map { item ->
+            Callable {
+                val path = item.path
+                val result = if (path.isBlank() || !File(path).isFile || !tagWriter.supports(path)) {
+                    false
+                } else {
+                    tagWriter.removeReplayGainTags(path)
+                }
+                if (result) cleaned.incrementAndGet() else skipped.incrementAndGet()
+                val done = completed.incrementAndGet()
+                if (done % PROGRESS_INTERVAL == 0) {
+                    toast("增益标签清理进度 $done/$total", WorkshopApi.Ui.ToastType.Success)
+                }
             }
         }
 
+        try {
+            workers.invokeAll(tasks)
+        } catch (error: InterruptedException) {
+            Thread.currentThread().interrupt()
+            log("标签清理被中断", error)
+            toast("ReplayGain 标签清理被中断", WorkshopApi.Ui.ToastType.Warning)
+            return
+        }
+
         toast(
-            "增益标签清理完成：清理 $cleaned，跳过 $skipped",
+            "增益标签清理完成：清理 ${cleaned.get()}，跳过 ${skipped.get()}",
             WorkshopApi.Ui.ToastType.Success
         )
     }

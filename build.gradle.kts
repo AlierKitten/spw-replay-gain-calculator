@@ -5,11 +5,11 @@ plugins {
     id("java-library")
     id("org.jetbrains.kotlin.kapt")
     alias(libs.plugins.jetbrains.kotlin.jvm)
-    id("com.xuncorp.spw.workshop") version "0.1.0-dev22"
+    id("com.xuncorp.spw.workshop") version "0.1.0-dev23"
 }
 
 group = "com.alierkitten.spw.replaygain"
-version = "1.0.4"
+version = "1.0.5"
 
 java {
     sourceCompatibility = JavaVersion.VERSION_25
@@ -39,7 +39,7 @@ spmod {
     PluginClass = "com.alierkitten.spw.replaygain.MainPlugin"
     PluginId = "com.alierkitten.spw.replaygain"
     PluginName = "ReplayGain Calculator"
-    PluginDescription = "Measures EBU R128 loudness with FFmpeg and writes ReplayGain tags to MP3/FLAC/OGG metadata."
+    PluginDescription = "用于计算回放增益 / Tips: 计算完成后需手动刷新音乐库"
     PluginVersion = project.version.toString()
     PluginProvider = "alierkitten"
     PluginOpenSourceUrl = "https://github.com/AlierKitten/spw-replay-gain-calculator"
