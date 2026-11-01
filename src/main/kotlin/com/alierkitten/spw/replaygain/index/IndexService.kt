@@ -13,6 +13,7 @@ import java.util.concurrent.Callable
 import java.util.concurrent.CompletionException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -57,8 +58,16 @@ class IndexService(
     }
 
     fun shutdown() {
+        // Interrupt the controller (blocked in invokeAll) and every worker so any
+        // in-flight FFmpeg measurement is aborted and the SQLite connection is no
+        // longer held. Wait for the pools to actually drain before returning so the
+        // caller can safely close the store without racing an alive worker.
         controller.shutdownNow()
         workers.shutdownNow()
+        runCatching {
+            controller.awaitTermination(15, TimeUnit.SECONDS)
+            workers.awaitTermination(15, TimeUnit.SECONDS)
+        }
     }
 
     private fun submit(task: () -> Unit) {
@@ -281,6 +290,10 @@ class IndexService(
 
         val result = try {
             engine.measure(path, reference)
+        } catch (error: InterruptedException) {
+            // Cancellation: let it propagate so the run loop reports "已停止"
+            // instead of miscounting this track as a measurement failure.
+            throw error
         } catch (error: Throwable) {
             log("测量失败: $path", error)
             return Outcome.FAILED

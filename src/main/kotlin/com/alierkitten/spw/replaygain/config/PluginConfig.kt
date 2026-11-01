@@ -10,6 +10,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.Locale
+import java.util.function.Consumer
 
 object ConfigKeys {
     const val FILE_NAME = "config.json"
@@ -75,11 +76,26 @@ class PluginConfig private constructor(
     @Volatile
     private var normalizing = false
 
+    private var configListener: Consumer<ConfigHelper>? = null
+
     fun observeChanges() {
-        manager.addConfigChangeListener { changed ->
+        val listener = Consumer<ConfigHelper> { changed ->
             changed.reload()
             normalizeReferenceLoudness()
         }
+        configListener = listener
+        manager.addConfigChangeListener(listener)
+    }
+
+    /**
+     * Removes the change listener registered on the host's [ConfigManager]. Without
+     * this the host keeps a strong reference to this class after the plugin stops,
+     * pinning the plugin classloader (and the bundled jars), which blocks
+     * deleting/upgrading the plugin on Windows.
+     */
+    fun dispose() {
+        configListener?.let { listener -> runCatching { manager.removeConfigChangeListener(listener) } }
+        configListener = null
     }
 
     /**

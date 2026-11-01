@@ -58,10 +58,18 @@ class ReplayGainEngine(
             process.inputStream.bufferedReader().use { it.readText() }
         }
 
-        if (!process.waitFor(10, TimeUnit.MINUTES)) {
+        try {
+            if (!process.waitFor(10, TimeUnit.MINUTES)) {
+                process.destroyForcibly()
+                output.cancel(true)
+                throw IllegalStateException("FFmpeg timed out while measuring ${file.name}")
+            }
+        } catch (error: InterruptedException) {
+            // Interrupted (e.g. plugin stop / cancellation): kill FFmpeg so it does
+            // not keep decoding in the background, then propagate to unwind the task.
             process.destroyForcibly()
             output.cancel(true)
-            throw IllegalStateException("FFmpeg timed out while measuring ${file.name}")
+            throw error
         }
         val exit = process.exitValue()
         val captured = output.get(30, TimeUnit.SECONDS)
