@@ -35,8 +35,10 @@ class MainPlugin(
             )
         }
 
+        // Connection is opened lazily on first use and closed on idle, so the
+        // bundled sqlite-jdbc jar is not held open while the plugin is inactive
+        // (which otherwise blocks deleting/upgrading the plugin on Windows).
         val newStore = IndexStore(pluginConfig.dataDirectory.resolve("replaygain.db"))
-        newStore.init()
         store = newStore
 
         val service = IndexService(
@@ -60,7 +62,7 @@ class MainPlugin(
 
     override fun stop() {
         indexService?.shutdown()
-        store?.close()
+        store?.shutdown()
         indexService = null
         store = null
         if (instance === this) instance = null
